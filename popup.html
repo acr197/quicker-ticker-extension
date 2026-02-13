@@ -1,0 +1,408 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Quicker Ticker</title>
+  <style>
+    :root{
+      --bg:#0f1116; --panel:#151822; --panel2:#11131a; --text:#e8eaed; --muted:#a7adb7;
+      --line:rgba(255,255,255,.08); --btn:#232838; --btn2:#1b2030;
+      --good:rgba(27,160,96,.22); --good2:rgba(27,160,96,.55);
+      --bad:rgba(210,64,64,.22); --bad2:rgba(210,64,64,.55);
+      --pill:rgba(255,255,255,.08);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; padding:0;
+      background:linear-gradient(180deg,#0f1116,#0b0d12);
+      color:var(--text);
+      font:12px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+      width:800px;
+    }
+    .wrap{padding:12px}
+    .top{
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:10px;
+    }
+    .brand{
+      font-weight:700; font-size:14px; letter-spacing:.2px;
+      display:flex; align-items:baseline; gap:8px;
+    }
+    .ver{font-size:11px; color:var(--muted); font-weight:600}
+    .controls{display:flex; gap:8px; align-items:center}
+    .inputwrap{position:relative; width:300px}
+    input[type=text]{
+      width:100%; height:32px;
+      background:rgba(255,255,255,.04);
+      border:1px solid var(--line);
+      color:var(--text);
+      padding:0 10px;
+      border-radius:18px;
+      outline:none;
+    }
+    input[type=text]:focus{border-color:rgba(255,255,255,.22)}
+    button{
+      background:var(--btn);
+      border:1px solid var(--line);
+      color:var(--text);
+      height:32px;
+      padding:0 12px;
+      border-radius:10px;
+      cursor:pointer;
+      font-weight:600;
+    }
+    button:hover{background:var(--btn2)}
+    .iconbtn{width:32px; padding:0; border-radius:10px; display:grid; place-items:center}
+    .status{
+      margin:8px 0 10px;
+      color:var(--muted);
+      min-height:16px;
+      user-select:none;
+      cursor:pointer;
+    }
+
+    .tablewrap{
+      background:rgba(255,255,255,.03);
+      border:1px solid var(--line);
+      border-radius:14px;
+      overflow:hidden;
+    }
+    table{width:100%; border-collapse:collapse; table-layout:fixed}
+    thead th{
+      text-align:left;
+      font-size:11px;
+      color:var(--muted);
+      border-bottom:1px solid var(--line);
+      padding:8px 8px;
+      position:relative;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    tbody td{
+      padding:8px 8px;
+      border-bottom:1px solid rgba(255,255,255,.05);
+      vertical-align:middle;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    tbody tr:last-child td{border-bottom:none}
+    .thwrap{display:flex; align-items:center; gap:8px}
+    .thlabel{user-select:none}
+    .col-drag{
+      display:inline-grid; place-items:center;
+      width:16px; height:16px;
+      border-radius:6px;
+      cursor:grab;
+      opacity:.85;
+    }
+    .col-drag:active{cursor:grabbing}
+    .dots{width:10px; height:10px; opacity:.9}
+
+    /* Column widths (tight) */
+    .col-sym{width:64px}
+    .col-name{width:128px; text-transform:uppercase}
+    .col-day{width:66px}
+    .col-week{width:66px}
+    .col-month{width:66px}
+    .col-price{width:64px}
+    .col-mcap{width:74px}
+    .col-shares{width:56px}
+    .col-value{width:82px}
+    .col-act{width:128px; text-align:right; overflow:visible}
+
+    .pct{
+      display:block;
+      width:100%;
+      min-width:0;
+      padding:4px 6px;
+      border-radius:10px;
+      font-weight:800;
+      text-align:center;
+      background:var(--pill);
+    }
+    .pct.good{background:var(--good); box-shadow:inset 0 0 0 1px var(--good2)}
+    .pct.bad{background:var(--bad); box-shadow:inset 0 0 0 1px var(--bad2)}
+    .muted{color:var(--muted)}
+    .money{font-variant-numeric:tabular-nums}
+    .sym{font-weight:800; letter-spacing:.2px}
+    .row{cursor:default}
+    .drop-before{box-shadow:inset 0 2px 0 rgba(255,255,255,.22)}
+    .drop-after{box-shadow:inset 0 -2px 0 rgba(255,255,255,.22)}
+
+    .row.dragging{opacity:.6}
+    .row .rm{cursor:pointer}
+    .row .ai{cursor:pointer}
+    .row input.shares{
+      width:100%;
+      height:26px;
+      border-radius:8px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.04);
+      color:var(--text);
+      padding:0 8px;
+      outline:none;
+      font-variant-numeric:tabular-nums;
+      cursor:text;
+    }
+    .row input.shares:focus{border-color:rgba(255,255,255,.22)}
+    .actions{display:flex; justify-content:flex-end; gap:3px; flex-wrap:nowrap}
+    .mini{
+      width:22px; height:22px; padding:0;
+      display:grid; place-items:center;
+      border-radius:9px;
+    }
+    .mini svg{opacity:.9}
+    .mini:active{transform:translateY(1px)}
+    .mini:disabled{opacity:.55; cursor:not-allowed}
+    .group-row{
+      background:rgba(255,255,255,.02);
+      font-weight:800;
+    }
+    .group-row td{border-bottom:1px solid rgba(255,255,255,.08)}
+    .group-name{color:#dfe4ea}
+    .group-avg{
+      font-weight:900;
+      display:block;
+      width:100%;
+      min-width:0;
+      padding:4px 6px;
+      border-radius:10px;
+      text-align:center;
+      background:rgba(255,255,255,.06);
+    }
+    .center{text-align:center}
+
+    /* Suggestions */
+    .suggest{
+      position:absolute;
+      top:36px; left:0; right:0;
+      background:#121521;
+      border:1px solid var(--line);
+      border-radius:12px;
+      overflow:hidden;
+      z-index:50;
+      box-shadow:0 12px 28px rgba(0,0,0,.45);
+    }
+    .suggest.hidden{display:none}
+    .sitem{
+      padding:8px 10px;
+      cursor:pointer;
+      display:flex; justify-content:space-between; gap:10px;
+    }
+    .sitem:hover{background:rgba(255,255,255,.06)}
+    .sleft{min-width:0}
+    .ssym{font-weight:800}
+    .sdesc{color:var(--muted); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+    .stype{color:var(--muted); font-size:11px; font-weight:700}
+
+    /* Toast */
+    .toast{
+      position:fixed;
+      top:10px; left:50%;
+      transform:translateX(-50%);
+      background:#121521;
+      border:1px solid rgba(255,255,255,.12);
+      color:var(--text);
+      padding:8px 12px;
+      border-radius:12px;
+      z-index:200;
+      box-shadow:0 12px 28px rgba(0,0,0,.45);
+      font-weight:700;
+    }
+    .toast.hidden{display:none}
+
+    /* AI modal */
+    .modal{
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.55);
+      display:grid; place-items:center;
+      z-index:250;
+    }
+    .modal.hidden{display:none}
+    .modalcard{
+      width:640px;
+      max-width:calc(100vw - 24px);
+      max-height:calc(100vh - 24px);
+      background:#121521;
+      border:1px solid rgba(255,255,255,.12);
+      border-radius:16px;
+      box-shadow:0 18px 40px rgba(0,0,0,.55);
+      overflow:hidden;
+      display:flex;
+      flex-direction:column;
+    }
+    .modalhead{
+      padding:12px 14px;
+      display:flex; justify-content:space-between; align-items:center;
+      border-bottom:1px solid rgba(255,255,255,.08);
+      font-weight:900;
+    }
+    .close{
+      width:30px; height:30px; border-radius:10px;
+      display:grid; place-items:center;
+      cursor:pointer;
+      background:rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.10);
+    }
+    .close:hover{background:rgba(255,255,255,.08)}
+    .modalbody{
+      padding:12px 14px;
+      color:var(--text);
+      overflow:auto;
+      flex:1;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+    .aiLoad{display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px}
+    .spinner{width:14px; height:14px; border-radius:50%; border:2px solid rgba(255,255,255,.18); border-top-color:rgba(255,255,255,.7); animation:spin 0.8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .aiOut{white-space:pre-wrap}
+    .aiLine{display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,.06)}
+    .aiLine:last-child{border-bottom:none}
+    .aiBullet{opacity:.75; margin-top:2px}
+    .aiText{flex:1; min-width:0; white-space:pre-wrap}
+    .aiSrc{font-size:11px; color:var(--text); text-decoration:none; padding:2px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.03); white-space:nowrap}
+    .aiSrc:hover{background:rgba(255,255,255,.06)}
+    .modalfoot{
+      padding:12px 14px;
+      display:flex; justify-content:flex-end; gap:8px;
+      border-top:1px solid rgba(255,255,255,.08);
+    }
+    .okbtn{min-width:90px}
+
+    /* Sponsor */
+    .sponsor{
+      margin-top:10px;
+      background:rgba(255,255,255,.03);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px;
+    }
+    .sponline{display:flex; justify-content:space-between; align-items:center; margin-bottom:6px}
+    .sponlabel{font-size:11px; letter-spacing:1px; font-weight:900; color:var(--muted)}
+    .sponclose{cursor:pointer; width:26px; height:26px; display:grid; place-items:center; border-radius:10px; border:none; background:transparent; opacity:.55}
+    .sponclose:hover{background:rgba(255,255,255,.05); opacity:.75}
+    .sponcard{display:flex; gap:10px; align-items:center}
+
+
+    /* Totals */
+    .totals{
+      margin-top:10px;
+      background:rgba(255,255,255,.03);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px 12px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+    .totals .label{color:var(--muted); font-size:11px; font-weight:900; letter-spacing:1px}
+    .totals .value{font-weight:900; font-size:14px}
+    .totals .pills{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-left:auto}
+    .totals .pill{
+      padding:4px 8px;
+      border-radius:999px;
+      border:1px solid rgba(255,255,255,.12);
+      background:rgba(255,255,255,.03);
+      font-weight:800;
+      font-size:11px;
+      white-space:nowrap;
+    }
+    .totals .pill.good{background:var(--good); outline:1px solid var(--good2)}
+    .totals .pill.bad{background:var(--bad); outline:1px solid var(--bad2)}
+    .sponlogo{width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,.06); display:grid; place-items:center; font-weight:900}
+    .spontext{min-width:0}
+    .sponname{font-weight:900}
+    .spontag{color:var(--muted); font-size:11px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:360px}
+  </style>
+</head>
+<body>
+  <div class="toast hidden" id="toast"></div>
+
+  <div class="wrap">
+    <div class="top">
+      <div class="brand">
+        <span>Quicker Ticker</span>
+        <span class="ver" id="ver"></span>
+      </div>
+
+      <div class="controls">
+        <div class="inputwrap">
+          <input id="ticker" type="text" placeholder="AAPL or Apple..." autocomplete="off" />
+          <div id="suggest" class="suggest hidden"></div>
+        </div>
+        <button id="add">Add</button>
+        <button id="refresh" class="iconbtn" title="Refresh">↻</button>
+        <button id="prefs" class="iconbtn" title="Preferences">⚙</button>
+      </div>
+    </div>
+
+    <div class="status" id="status" title="Click to clear status">Done</div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr id="hdr"></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+
+    <div class="sponsor" id="sponsorBox" style="display:none">
+      <div class="sponline">
+        <div class="sponlabel">SPONSORED</div>
+        <div class="sponclose" id="sponsorClose" title="Hide sponsor">×</div>
+      </div>
+      <div class="sponcard">
+        <div class="sponlogo" id="sponsorLogo">S</div>
+        <div class="spontext">
+          <div class="sponname" id="sponsorName">Sponsor</div>
+          <div class="spontag" id="sponsorTag">Bonus varies. See current offer.</div>
+        </div>
+        <div style="flex:1"></div>
+        <button id="sponsorOpen">Open</button>
+      </div>
+    </div>
+
+    <div class="totals" id="totalsBox" style="display:none">
+      <div>
+        <div class="label">TOTAL VALUE</div>
+        <div class="value money" id="totValue">$0.00</div>
+      </div>
+      <div class="pills">
+        <div class="pill" id="totDay">Today: n/a</div>
+        <div class="pill" id="tot7">7d: n/a</div>
+        <div class="pill" id="tot30">30d: n/a</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal hidden" id="aiModal">
+    <div class="modalcard">
+      <div class="modalhead">
+        <div id="aiTitle">AI Summary</div>
+        <div style="display:flex; gap:8px; align-items:center">
+          <button class="mini" id="aiRun" title="Run again">↻</button>
+          <button class="mini" id="aiCancel" title="Stop" style="display:none">Stop</button>
+          <div class="close" id="aiClose" title="Close">×</div>
+        </div>
+      </div>
+      <div class="modalbody">
+        <div class="aiLoad" id="aiLoad" style="display:none">
+          <div class="spinner"></div>
+          <div id="aiLoadText">Working…</div>
+        </div>
+        <div class="aiOut" id="aiBody">Loading...</div>
+      </div>
+      <div class="modalfoot">
+        <button class="okbtn" id="aiOk">Okay</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

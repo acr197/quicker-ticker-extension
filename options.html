@@ -1,0 +1,201 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Quicker Ticker Preferences</title>
+  <style>
+    :root{
+      --bg:#0f1116; --panel:#151822; --text:#e8eaed; --muted:#a7adb7; --line:rgba(255,255,255,.08);
+      --btn:#232838; --btn2:#1b2030;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; padding:0;
+      background:linear-gradient(180deg,#0f1116,#0b0d12);
+      color:var(--text);
+      font:13px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    }
+    .wrap{padding:18px}
+    .card{
+      max-width:980px;
+      margin:0 auto;
+      background:rgba(255,255,255,.03);
+      border:1px solid var(--line);
+      border-radius:18px;
+      padding:16px 16px 12px;
+      box-shadow:0 18px 40px rgba(0,0,0,.35);
+    }
+    h1{
+      margin:0 0 12px;
+      font-size:20px;
+      font-weight:900;
+      letter-spacing:.2px;
+    }
+    label{display:block; color:var(--muted); font-size:12px; margin:8px 0 6px}
+    input[type=text], input[type=password]{
+      width:100%;
+      background:rgba(255,255,255,.04);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:10px 12px;
+      color:var(--text);
+      outline:none;
+    }
+    input[type=text]:focus, input[type=password]:focus{border-color:rgba(255,255,255,.22)}
+    .row{display:flex; gap:12px; align-items:center}
+    .row > div{flex:1}
+    .divider{height:1px; background:var(--line); margin:14px 0}
+    .switchline{display:flex; align-items:center; gap:10px; margin:10px 0}
+    .switchline .title{font-weight:800}
+    .switchline .hint{color:var(--muted); font-size:12px}
+    .toggle{
+      width:46px; height:26px;
+      border-radius:999px;
+      background:rgba(255,255,255,.10);
+      border:1px solid var(--line);
+      position:relative;
+      cursor:pointer;
+      flex:0 0 auto;
+    }
+    .knob{
+      position:absolute; top:3px; left:3px;
+      width:20px; height:20px;
+      border-radius:999px;
+      background:#dfe4ea;
+      transition:all .16s ease;
+    }
+    .toggle.on{background:rgba(27,160,96,.35)}
+    .toggle.on .knob{left:23px; background:#e8fff3}
+
+    .groupsBox{margin-top:10px; display:none}
+    .groupsBox.on{display:block}
+    .groupRow{
+      display:flex; gap:10px; align-items:center; margin:8px 0;
+    }
+    .groupRow input{flex:1}
+    .mini{
+      width:32px; height:32px;
+      display:flex; align-items:center; justify-content:center;
+      padding:0;
+      border-radius:12px;
+      background:rgba(255,255,255,.04);
+      border:1px solid var(--line);
+      cursor:pointer;
+      font-size:18px;
+      line-height:1;
+      color:var(--text);
+      flex:0 0 auto;
+    }
+    .mini:hover{background:rgba(255,255,255,.07)}
+    .mini:disabled{opacity:.45; cursor:not-allowed}
+
+    button{
+      background:var(--btn);
+      border:1px solid var(--line);
+      color:var(--text);
+      padding:10px 14px;
+      border-radius:12px;
+      cursor:pointer;
+      font-weight:800;
+    }
+    button:hover{background:var(--btn2)}
+    .footer{
+      display:flex; justify-content:space-between; align-items:center;
+      margin-top:12px; color:var(--muted); font-size:12px;
+      gap:12px;
+    }
+    .coffee{
+      display:flex; align-items:center; gap:8px;
+      text-decoration:none;
+      color:var(--text);
+      padding:8px 10px;
+      border-radius:999px;
+      border:1px solid var(--line);
+      background:rgba(255,255,255,.03);
+      font-weight:800;
+    }
+    .coffee:hover{background:rgba(255,255,255,.06)}
+    .note{color:var(--muted); font-size:12px; margin-top:6px}
+    .link{color:var(--text); text-decoration:none; border-bottom:1px solid rgba(255,255,255,.18)}
+    .link:hover{border-bottom-color:rgba(255,255,255,.35)}
+    .note a{color:var(--text); text-decoration:none; border-bottom:1px solid rgba(255,255,255,.18)}
+    .note a:hover{border-bottom-color:rgba(255,255,255,.35)}
+    .small{font-size:12px; color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Quicker Ticker Preferences</h1>
+
+      <label for="finnhub">Finnhub API token</label>
+      <input id="finnhub" type="text" placeholder="Paste your Finnhub token" />
+      <div class="note"><a class="link" href="https://finnhub.io/register" target="_blank" rel="noreferrer">Get a free token at Finnhub</a></div>
+      <div class="note"><a href="https://finnhub.io/register" target="_blank" rel="noreferrer">Get a free token</a></div>
+
+      <div class="divider"></div>
+
+      <div class="switchline">
+        <div class="toggle" id="tGroups"><div class="knob"></div></div>
+        <div>
+          <div class="title">Enable Grouping</div>
+          <div class="hint">Create headers and use ▲▼ in the popup to move tickers between groups</div>
+        </div>
+        <div style="margin-left:auto" class="small"><span id="groupCount">0</span>/5</div>
+      </div>
+
+      <div class="groupsBox" id="groupsBox">
+        <div class="switchline" style="margin-top:0">
+          <div class="toggle" id="tAvg"><div class="knob"></div></div>
+          <div>
+            <div class="title">Group performance averaging</div>
+            <div class="hint">Show Today, 7d, 30d averages on each group row</div>
+          </div>
+        </div>
+
+        <div id="groupList"></div>
+
+        <div class="groupRow" style="justify-content:center; margin-top:10px">
+          <button class="mini" id="addGroup" title="Add group">+</button>
+        </div>
+
+        <div class="note">Use ▲▼ in the popup to move tickers between groups. Group rows also have ▲▼ to move whole groups.</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="switchline">
+        <div class="toggle" id="tPV"><div class="knob"></div></div>
+        <div>
+          <div class="title">Personal value</div>
+          <div class="hint">Add Shares + Value columns and totals</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="switchline">
+        <div class="toggle" id="tAI"><div class="knob"></div></div>
+        <div>
+          <div class="title">AI summaries</div>
+          <div class="hint">Optional: click ✨ on a row to get an explanation</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="note" id="savedMsg" style="display:none">Saved.</div>
+
+      <div class="footer">
+        <div>Uses Yahoo for current price/name and Stooq for 7d and 30d.</div>
+        <a class="coffee" href="https://buymeacoffee.com/" target="_blank" rel="noreferrer">
+          ☕ <span>Buy me a coffee</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
