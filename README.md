@@ -1,14 +1,16 @@
-# ✨ Quicker Ticker: an AI-powered watchlist that explains price moves (Chrome Extension)
+# ✨ Quicker Ticker (Chrome Extension)
 
-A compact Chrome popup watchlist for stocks + ETFs that shows **Today / 7d / 30d** performance, pulls live price + market cap/AUM, and uses an **AI “why did it move?”** assistant to surface only the most relevant, price-moving headlines with source links.
+I couldn't believe how difficult it was to find something that just shows me my portfolio performance without requiring logins, subscriptions, or registrations. So, I built one myself with AI.
 
-- Live demo video: 
-- Prompting doc / notes (optional): 
+This is a compact Chrome popup watchlist for stocks + ETFs that shows **Today / 7d / 30d** performance, pulls live price + market cap/AUM, and uses an **AI “why did it move?”** assistant to surface only the most relevant, price-moving headlines with source links.
+
+- 50s Live demo video: https://youtu.be/xKoZ6B4Cieg
 
 ---
 
 ## 🚀 Why this matters
 
+- **Simple**: Too many extensions try to do too much or limit/squeeze you on every other click to pay. This is simple and instant with free resources.
 - **Turns noise into signal:** the AI assistant filters down to **2–4** short, high-impact bullets tied to the lookback window.
 - **Portfolio context, instantly:** optional shares-based math shows **total value** plus **total P/L** for Today, 7d, and 30d.
 - **Responsible AI by design:** strict formatting rules, deduping, character limits, and source links help keep the output scannable and trustworthy.
