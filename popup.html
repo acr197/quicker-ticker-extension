@@ -74,14 +74,14 @@
       font-size:11px;
       color:var(--muted);
       border-bottom:1px solid var(--line);
-      padding:8px 8px;
+      padding:6px 5px;
       position:relative;
       white-space:nowrap;
       overflow:hidden;
       text-overflow:ellipsis;
     }
     tbody td{
-      padding:8px 8px;
+      padding:6px 5px;
       border-bottom:1px solid rgba(255,255,255,.05);
       vertical-align:middle;
       overflow:hidden;
@@ -101,17 +101,17 @@
     .col-drag:active{cursor:grabbing}
     .dots{width:10px; height:10px; opacity:.9}
 
-    /* Column widths (tight) */
-    .col-sym{width:64px}
-    .col-name{width:128px; text-transform:uppercase}
-    .col-day{width:66px}
-    .col-week{width:66px}
-    .col-month{width:66px}
-    .col-price{width:64px}
-    .col-mcap{width:74px}
-    .col-shares{width:56px}
-    .col-value{width:82px}
-    .col-act{width:128px; text-align:right; overflow:visible}
+    /* Column widths – must fit 800px popup even with Shares+Value visible */
+    .col-sym{width:52px}
+    .col-name{width:100px; text-transform:uppercase}
+    .col-day{width:62px}
+    .col-week{width:62px}
+    .col-month{width:62px}
+    .col-price{width:58px}
+    .col-mcap{width:64px}
+    .col-shares{width:48px}
+    .col-value{width:66px}
+    .col-act{width:100px; text-align:right; overflow:visible}
 
     .pct{
       display:block;
@@ -355,6 +355,18 @@
       </table>
     </div>
 
+    <div class="totals" id="totalsBox" style="display:none">
+      <div>
+        <div class="label">TOTAL VALUE</div>
+        <div class="value money" id="totValue">$0.00</div>
+      </div>
+      <div class="pills">
+        <div class="pill" id="totDay">Today: n/a</div>
+        <div class="pill" id="tot7">7d: n/a</div>
+        <div class="pill" id="tot30">30d: n/a</div>
+      </div>
+    </div>
+
     <div class="sponsor" id="sponsorBox" style="display:none">
       <div class="sponline">
         <div class="sponlabel">SPONSORED</div>
@@ -368,18 +380,6 @@
         </div>
         <div style="flex:1"></div>
         <button id="sponsorOpen">Open</button>
-      </div>
-    </div>
-
-    <div class="totals" id="totalsBox" style="display:none">
-      <div>
-        <div class="label">TOTAL VALUE</div>
-        <div class="value money" id="totValue">$0.00</div>
-      </div>
-      <div class="pills">
-        <div class="pill" id="totDay">Today: n/a</div>
-        <div class="pill" id="tot7">7d: n/a</div>
-        <div class="pill" id="tot30">30d: n/a</div>
       </div>
     </div>
   </div>

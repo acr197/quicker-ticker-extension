@@ -1127,6 +1127,7 @@ function updateTotalsBox(store, rows) {
 
   let totalValue = 0;
   let dDay = 0, d7 = 0, d30 = 0;
+  let prevDay = 0, prev7 = 0, prev30 = 0;
   let hasValue = false;
 
   for (const r of rows) {
@@ -1142,28 +1143,43 @@ function updateTotalsBox(store, rows) {
     if (Number.isFinite(dd)) dDay += dd;
     if (Number.isFinite(d7i)) d7 += d7i;
     if (Number.isFinite(d30i)) d30 += d30i;
+
+    // Track previous values for overall % calc
+    const sh = Number(r.shares) || 0;
+    const pr = Number(r.price) || 0;
+    if (sh > 0 && Number.isFinite(pr)) {
+      const fD = safePctToFrac(r.dayPct);
+      const f7 = safePctToFrac(r.weekPct);
+      const f30 = safePctToFrac(r.monthPct);
+      if (Number.isFinite(fD)) prevDay += (sh * pr) / (1 + fD);
+      if (Number.isFinite(f7)) prev7 += (sh * pr) / (1 + f7);
+      if (Number.isFinite(f30)) prev30 += (sh * pr) / (1 + f30);
+    }
   }
 
   $("#totValue").textContent = fmtMoney(totalValue);
 
-  const pill = (id, v) => {
+  const pill = (id, dollarVal, prevVal) => {
     const el = $(id);
     if (!el) return;
-    if (!hasValue || !Number.isFinite(v)) {
-      el.textContent = el.textContent.split(":")[0] + ": n/a";
+    const label = el.textContent.split(":")[0];
+    if (!hasValue || !Number.isFinite(dollarVal)) {
+      el.textContent = label + ": n/a";
       el.classList.remove("good", "bad");
       return;
     }
-    const s = (v >= 0 ? "+" : "") + fmtMoney(v);
-    el.textContent = el.textContent.split(":")[0] + ": " + s;
+    const pctVal = prevVal > 0 ? (dollarVal / prevVal) * 100 : NaN;
+    const dollarStr = (dollarVal >= 0 ? "+" : "") + fmtMoney(dollarVal);
+    const pctStr = Number.isFinite(pctVal) ? " (" + fmtPct(pctVal) + ")" : "";
+    el.textContent = label + ": " + dollarStr + pctStr;
     el.classList.remove("good", "bad");
-    if (v > 0) el.classList.add("good");
-    if (v < 0) el.classList.add("bad");
+    if (dollarVal > 0) el.classList.add("good");
+    if (dollarVal < 0) el.classList.add("bad");
   };
 
-  pill("#totDay", dDay);
-  pill("#tot7", d7);
-  pill("#tot30", d30);
+  pill("#totDay", dDay, prevDay);
+  pill("#tot7", d7, prev7);
+  pill("#tot30", d30, prev30);
 
   box.style.display = "flex";
 }
@@ -1775,7 +1791,7 @@ async function showAiSummary(rowOrSymbol) {
     const prompt = buildAiPrompt(payload, store);
 
     const text = await runAiPrompt(prompt);
-    const lines = postProcessAiLines(text, asOfPretty || "Feb 7, 2026");
+    const lines = postProcessAiLines(text, asOfPretty || fmtDatePrettyFromIso(todayIso()));
     renderAiLines(lines, news);
   } catch (e) {
     if (e && e.name === "AbortError") {
@@ -1790,13 +1806,33 @@ async function showAiSummary(rowOrSymbol) {
 
 function extractResponseText(data) {
   if (!data) return "";
+  // Direct text fields from proxy
   if (typeof data.summary === "string") return data.summary;
   if (typeof data.text === "string") return data.text;
   if (typeof data.output_text === "string") return data.output_text;
+  if (typeof data.result === "string") return data.result;
+  // OpenAI chat completion format
+  try {
+    if (data.choices && Array.isArray(data.choices) && data.choices.length) {
+      const msg = data.choices[0].message || data.choices[0];
+      if (msg && typeof msg.content === "string") return msg.content;
+      if (typeof msg.text === "string") return msg.text;
+    }
+  } catch (e) {}
+  // Anthropic Messages API format
+  try {
+    if (data.content && Array.isArray(data.content) && data.content.length) {
+      const block = data.content[0];
+      if (block && typeof block.text === "string") return block.text;
+    }
+  } catch (e) {}
+  // Nested output format
   try {
     const out = data.output && data.output[0] && data.output[0].content && data.output[0].content[0];
     if (out && typeof out.text === "string") return out.text;
   } catch (e) {}
+  // Last resort: stringify if it looks like it has useful content
+  if (typeof data === "string") return data;
   return "";
 }
 
