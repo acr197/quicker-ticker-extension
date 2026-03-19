@@ -32,7 +32,8 @@ const STORE_DEFAULTS = {
 
 const DEFAULT_AI_PROMPT_TEMPLATE = [
   "You write concise, date-led driver bullets for a stock/ETF watchlist popup.",
-  "Use ONLY the inputs below. Do not guess or use outside news.",
+  "Use ONLY the inputs below. Do not guess, speculate, or use outside knowledge.",
+  "If no headlines are provided, respond with exactly: \"No recent news available.\"",
   "",
   "Output rules:",
   "- Output 2 to 4 lines total. No headings, no labels, no extra blank lines.",
@@ -40,9 +41,10 @@ const DEFAULT_AI_PROMPT_TEMPLATE = [
   "- Do NOT include any leading bullet characters (the UI adds bullets).",
   "- Max 200 characters per line.",
   "- Do NOT repeat ticker/name/price/market cap or the raw performance numbers.",
+  "- Do NOT include any disclaimers, caveats, or advisory language.",
   "",
   "Content rules:",
-  "- Focus on what may have driven the Today, 7d, and 30d moves using the headlines only.",
+  "- Explain what likely drove the Today, 7d, and 30d price moves based on the headlines only.",
   "- Prefer diverse dates and topics; avoid repeating the same story.",
   "- Cite sources as \"Source #N\" referencing the numbered headline list.",
   "- For equities: you may use ONE optional forward-looking line if an upcoming earnings date is provided.",
@@ -399,14 +401,8 @@ function stooqDailyUrl(stooqSymbol) {
 
 function stooqCandidates(symbol) {
   const s = symbol.toLowerCase().trim();
-  const out = [];
-  // Common U.S. suffixes
-  out.push(`${s}.us`);
-  out.push(`${s}.us`);
-  out.push(`${s}`);
-  // ETFs and some tickers might exist without .us
-  out.push(`${s}.us`);
-  return [...new Set(out)];
+  // Common U.S. suffixes; ETFs and some tickers might exist without .us
+  return [`${s}.us`, `${s}`];
 }
 
 function parseStooqCsv(csv) {
@@ -462,6 +458,29 @@ async function stooqPctChange(symbol, daysBack) {
   return NaN;
 }
 
+async function stooqLastTradingDayPct(symbol) {
+  const isoNow = todayIso();
+  const cands = stooqCandidates(symbol);
+  for (const cand of cands) {
+    try {
+      const csv = await fetchText(stooqDailyUrl(cand));
+      const rows = parseStooqCsv(csv);
+      if (rows.length < 2) continue;
+      // Find last row on or before today
+      let lastIdx = rows.length - 1;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (rows[i].dt <= isoNow) { lastIdx = i; break; }
+      }
+      if (lastIdx < 1) continue;
+      const last = rows[lastIdx];
+      const prev = rows[lastIdx - 1];
+      const pct = ((last.close - prev.close) / prev.close) * 100;
+      if (Number.isFinite(pct)) return { dayPct: pct, price: last.close };
+    } catch (e) {}
+  }
+  return null;
+}
+
 /* ---------- Market cap + name fallbacks ---------- */
 function pickYahooQuote(q) {
   const r = q && q.quoteResponse && Array.isArray(q.quoteResponse.result) ? q.quoteResponse.result[0] : null;
@@ -477,10 +496,17 @@ function pickYahooQuote(q) {
 }
 
 function pickFinnhubQuote(q) {
-  // Finnhub /quote -> { c: current, dp: % change }
+  // Finnhub /quote -> { c: current, dp: % change, pc: previous close }
   if (!q || typeof q !== "object") return {};
   const price = Number.isFinite(Number(q.c)) ? Number(q.c) : NaN;
-  const dayPct = Number.isFinite(Number(q.dp)) ? Number(q.dp) : NaN;
+  let dayPct = Number.isFinite(Number(q.dp)) ? Number(q.dp) : NaN;
+  // Fallback: compute from close and previous close (handles weekends/holidays)
+  if (!Number.isFinite(dayPct) && Number.isFinite(price)) {
+    const pc = Number.isFinite(Number(q.pc)) ? Number(q.pc) : NaN;
+    if (Number.isFinite(pc) && pc !== 0) {
+      dayPct = ((price - pc) / pc) * 100;
+    }
+  }
   return { price, dayPct };
 }
 
@@ -494,11 +520,13 @@ function pickFinnhubProfile(p) {
 }
 
 function pickFinnhubEtfProfile(p) {
-  // Finnhub /etf/profile -> typically includes { name, aum (in millions) }
+  // Finnhub /etf/profile -> data may be nested under a "profile" key
   if (!p || typeof p !== "object") return {};
-  const name = (p.name || p.etfName || "").toString();
-  const aum = Number(p.aum ?? p.AUM ?? p.totalAssets);
-  const mcap = Number.isFinite(aum) ? aum * 1e6 : NaN;
+  const prof = (p.profile && typeof p.profile === "object") ? p.profile : p;
+  const name = (prof.name || prof.etfName || p.name || p.etfName || "").toString();
+  const aum = Number(prof.aum ?? prof.AUM ?? prof.totalAssets ?? p.aum ?? p.AUM ?? p.totalAssets);
+  // AUM may be in actual dollars (large) or in millions; normalize to dollars
+  const mcap = Number.isFinite(aum) ? (aum < 1e7 ? aum * 1e6 : aum) : NaN;
   return { name, mcap, assetType: "ETF" };
 }
 
@@ -507,9 +535,11 @@ function pickYahooSummary(s) {
   if (!r) return {};
   const price = r.price || {};
   const summary = r.summaryDetail || {};
+  const fundProfile = r.fundProfile || {};
   const name = (price.longName && price.longName.raw) || (price.shortName && price.shortName.raw) || "";
   const marketCap = summary.marketCap && summary.marketCap.raw ? Number(summary.marketCap.raw) : NaN;
-  const totalAssets = summary.totalAssets && summary.totalAssets.raw ? Number(summary.totalAssets.raw) : NaN;
+  const totalAssets = summary.totalAssets && summary.totalAssets.raw ? Number(summary.totalAssets.raw) :
+    (fundProfile.totalNetAssets && fundProfile.totalNetAssets.raw ? Number(fundProfile.totalNetAssets.raw) : NaN);
   const regPrice = price.regularMarketPrice && price.regularMarketPrice.raw ? Number(price.regularMarketPrice.raw) : NaN;
   return { name, mcap: Number.isFinite(marketCap) ? marketCap : totalAssets, price: regPrice };
 }
@@ -629,13 +659,23 @@ async function buildRow(symbol, store) {
   if (!name || !Number.isFinite(mcap)) {
     try {
       const ysKey = cacheKey("yahooSummary", symbol);
-      const ys = await cachedFetchJson(yahooSummaryUrl(symbol), ysKey, 24 * 60 * 60_000);
+      const ys = await cachedFetchJson(yahooQuoteSummaryUrl(symbol, "price,summaryDetail,fundProfile"), ysKey, 24 * 60 * 60_000);
       const picked = pickYahooSummary(ys);
       if (picked) {
         if (!name && picked.name) name = picked.name;
         if (!Number.isFinite(mcap) && Number.isFinite(picked.mcap)) mcap = picked.mcap;
       }
       tsMcap = Math.max(tsMcap, CACHE[ysKey] ? Number(CACHE[ysKey].fetchedAtMs) : 0);
+    } catch (e) {}
+  }
+
+  // 4) Stooq fallback for 1-day change (handles weekends/holidays when APIs return no daily data)
+  if (!Number.isFinite(dayPct)) {
+    try {
+      const k1d = cacheKey("stooq1d", symbol);
+      const result = await getCached(k1d, 12 * 60 * 60_000, () => stooqLastTradingDayPct(symbol));
+      if (result && Number.isFinite(result.dayPct)) dayPct = result.dayPct;
+      if (result && Number.isFinite(result.price) && !Number.isFinite(price)) price = result.price;
     } catch (e) {}
   }
 
@@ -758,7 +798,10 @@ function renderRows(rows, store) {
     td.className = col && col.cls ? col.cls : "";
 
     if (key === "symbol") {
-      td.innerHTML = isGroupRow ? `<span class="group-name">${safeUpper(r.groupName)}</span>` : `<span class="sym">${safeUpper(r.symbol)}</span>`;
+      const span = document.createElement("span");
+      span.className = isGroupRow ? "group-name" : "sym";
+      span.textContent = safeUpper(isGroupRow ? r.groupName : r.symbol);
+      td.appendChild(span);
       return td;
     }
 
@@ -1569,11 +1612,25 @@ async function updateSuggest() {
   for (const it of items) {
     const div = document.createElement("div");
     div.className = "sitem";
-    div.innerHTML = `<div class="sleft">
-        <div class="ssym">${it.symbol}</div>
-        <div class="sdesc">${it.desc}</div>
-      </div>
-      <div class="stype">${it.type}</div>`;
+
+    const left = document.createElement("div");
+    left.className = "sleft";
+    const symEl = document.createElement("div");
+    symEl.className = "ssym";
+    symEl.textContent = it.symbol;
+    const descEl = document.createElement("div");
+    descEl.className = "sdesc";
+    descEl.textContent = it.desc;
+    left.appendChild(symEl);
+    left.appendChild(descEl);
+
+    const typeEl = document.createElement("div");
+    typeEl.className = "stype";
+    typeEl.textContent = it.type;
+
+    div.appendChild(left);
+    div.appendChild(typeEl);
+
     div.addEventListener("mousedown", (e) => e.preventDefault()); // keep input focus
     div.addEventListener("click", async () => {
       clearSuggest();
