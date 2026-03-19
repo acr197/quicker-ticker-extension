@@ -894,11 +894,12 @@ function renderRows(rows, store) {
 
     const isGroup = meta && meta.type === "group";
 
+    // ✨ AI button (tickers only)
     if (!isGroup && store.aiEnabled) {
       const ai = document.createElement("button");
       ai.className = "mini ai no-drag";
       ai.title = "AI summary";
-      ai.innerHTML = "✨";
+      ai.textContent = "✨";
       ai.draggable = false;
       ai.addEventListener("mousedown", (e) => e.stopPropagation());
       ai.addEventListener("click", async (e) => {
@@ -908,47 +909,12 @@ function renderRows(rows, store) {
       actions.appendChild(ai);
     }
 
-    const up = document.createElement("button");
-    up.className = "mini no-drag";
-    up.title = "Move up";
-    up.innerHTML = "▲";
-    up.disabled = !(meta && meta.canUp);
-    up.draggable = false;
-    up.addEventListener("mousedown", (e) => e.stopPropagation());
-    up.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (up.disabled) return;
-      if (isGroup) {
-        await moveGroupStep(meta.groupId, -1);
-      } else {
-        await moveTickerStep(r.symbol, -1);
-      }
-    });
-    actions.appendChild(up);
-
-    const down = document.createElement("button");
-    down.className = "mini no-drag";
-    down.title = "Move down";
-    down.innerHTML = "▼";
-    down.disabled = !(meta && meta.canDown);
-    down.draggable = false;
-    down.addEventListener("mousedown", (e) => e.stopPropagation());
-    down.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (down.disabled) return;
-      if (isGroup) {
-        await moveGroupStep(meta.groupId, 1);
-      } else {
-        await moveTickerStep(r.symbol, 1);
-      }
-    });
-    actions.appendChild(down);
-
+    // × Remove button (tickers only)
     if (!isGroup) {
       const rm = document.createElement("button");
       rm.className = "mini rm no-drag";
       rm.title = "Remove";
-      rm.innerHTML = "×";
+      rm.textContent = "×";
       rm.draggable = false;
       rm.addEventListener("mousedown", (e) => e.stopPropagation());
       rm.addEventListener("click", async (e) => {
@@ -957,6 +923,21 @@ function renderRows(rows, store) {
       });
       actions.appendChild(rm);
     }
+
+    // ⠿ Drag handle (all rows) — grip dots icon
+    const grip = document.createElement("div");
+    grip.className = "drag-handle";
+    grip.title = "Drag to reorder";
+    grip.draggable = false; // tr is draggable; handle is just the visual cue
+    grip.innerHTML = `<svg viewBox="0 0 10 16" width="10" height="16" fill="currentColor">
+      <circle cx="3" cy="2.5" r="1.5"/>
+      <circle cx="7" cy="2.5" r="1.5"/>
+      <circle cx="3" cy="8" r="1.5"/>
+      <circle cx="7" cy="8" r="1.5"/>
+      <circle cx="3" cy="13.5" r="1.5"/>
+      <circle cx="7" cy="13.5" r="1.5"/>
+    </svg>`;
+    actions.appendChild(grip);
 
     td.appendChild(actions);
     tr.appendChild(td);
@@ -974,7 +955,7 @@ function renderRows(rows, store) {
       // Group row aligned to columns
       const groupRow = document.createElement("tr");
       groupRow.className = "group-row row";
-      groupRow.draggable = false;
+      groupRow.draggable = true;
       groupRow.dataset.type = "group";
       groupRow.dataset.groupId = g.id;
 
@@ -1003,7 +984,7 @@ function renderRows(rows, store) {
         const r = gRows[ri];
         const tr = document.createElement("tr");
         tr.className = "row";
-        tr.draggable = false;
+        tr.draggable = true;
         tr.dataset.type = "ticker";
         tr.dataset.symbol = r.symbol;
         tr.dataset.groupId = g.id;
@@ -1043,7 +1024,7 @@ function renderRows(rows, store) {
       const r = ordered[i];
       const tr = document.createElement("tr");
       tr.className = "row";
-      tr.draggable = false;
+      tr.draggable = true;
       tr.dataset.type = "ticker";
       tr.dataset.symbol = r.symbol;
 
@@ -1231,15 +1212,15 @@ function initColumnDnD(store) {
 /* ---------- Row drag reorder ---------- */
 let DRAG_STATE = null;
 
-function initRowDnD(store) {
+function initRowDnD() {
   const tbody = $("#rows");
 
   tbody.addEventListener("dragstart", (e) => {
     const tr = e.target.closest("tr");
     if (!tr) return;
 
-    // Don't start dragging from interactive controls
-    if (e.target.closest(".no-drag")) {
+    // Only allow drag when starting from the drag handle
+    if (!e.target.closest(".drag-handle")) {
       e.preventDefault();
       return;
     }
@@ -2077,6 +2058,9 @@ async function init() {
   // First paint: snapshot, then refresh
   await render(false);
   setTimeout(() => render(true), 20);
+
+  // Wire up row drag-and-drop once (uses event delegation, survives re-renders)
+  initRowDnD();
 
   initSponsor();
 }
