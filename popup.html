@@ -145,8 +145,12 @@
       padding:0 8px;
       outline:none;
       font-variant-numeric:tabular-nums;
+      font-size:12px;
       cursor:text;
+      -moz-appearance:textfield;
     }
+    .row input.shares::-webkit-outer-spin-button,
+    .row input.shares::-webkit-inner-spin-button{-webkit-appearance:none; margin:0}
     .row input.shares:focus{border-color:rgba(255,255,255,.22)}
     .actions{display:flex; justify-content:flex-end; gap:3px; flex-wrap:nowrap}
     .mini{
