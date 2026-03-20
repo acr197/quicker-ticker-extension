@@ -33,7 +33,7 @@ const STORE_DEFAULTS = {
 const DEFAULT_AI_PROMPT_TEMPLATE = [
   "You write concise, date-led driver bullets for a stock/ETF watchlist popup.",
   "Use ONLY the inputs below. Do not guess, speculate, or use outside knowledge.",
-  "If no headlines are provided, respond with exactly: \"No recent news available.\"",
+  "If no headlines are provided, write 1-2 lines describing only the recent price performance (no speculation about causes).",
   "",
   "Output rules:",
   "- Output 2 to 4 lines total. No headings, no labels, no extra blank lines.",
@@ -69,7 +69,7 @@ const COLS_ALL = [
   { key: "weekPct", label: "7d", cls: "col-week center" },
   { key: "monthPct", label: "30d", cls: "col-month center" },
   { key: "price", label: "Price", cls: "col-price" },
-  { key: "mcap", label: "Mkt Cap/AUM", cls: "col-mcap" },
+  { key: "mcap", label: "Mkt Cap", cls: "col-mcap" },
   { key: "shares", label: "Shares", cls: "col-shares" },
   { key: "value", label: "Value", cls: "col-value" }
 ];
@@ -817,7 +817,7 @@ function renderRows(rows, store) {
         if (store.groupAveraging && Number.isFinite(v)) {
           const div = document.createElement("div");
           div.className = "group-avg";
-          div.textContent = fmtPct(v, 3);
+          div.textContent = fmtPct(v, 2);
           td.appendChild(div);
         }
         return td;
@@ -832,13 +832,13 @@ function renderRows(rows, store) {
 
     if (key === "price") {
       td.classList.add("money");
-      td.textContent = fmtPrice(r.price);
+      td.textContent = Number.isFinite(r.price) ? fmtPrice(r.price) : "";
       return td;
     }
 
     if (key === "mcap") {
       td.classList.add("money");
-      td.textContent = fmtMoney(r.mcap);
+      td.textContent = Number.isFinite(r.mcap) ? fmtMoney(r.mcap) : "";
       return td;
     }
 
@@ -922,7 +922,7 @@ function renderRows(rows, store) {
       actions.appendChild(rm);
     }
 
-    // Drag handle (grip icon)
+    // Drag handle (grip icon) — dragging is allowed only when initiated here
     const grip = document.createElement("div");
     grip.className = "drag-handle";
     grip.title = "Drag to reorder";
@@ -940,7 +940,6 @@ function renderRows(rows, store) {
       svg.appendChild(c);
     }
     grip.appendChild(svg);
-    grip.addEventListener("mousedown", () => { tr.draggable = true; });
     actions.appendChild(grip);
 
     td.appendChild(actions);
@@ -959,7 +958,7 @@ function renderRows(rows, store) {
       // Group row aligned to columns
       const groupRow = document.createElement("tr");
       groupRow.className = "group-row row";
-      groupRow.draggable = false;
+      groupRow.draggable = true;
       groupRow.dataset.type = "group";
       groupRow.dataset.groupId = g.id;
 
@@ -988,7 +987,7 @@ function renderRows(rows, store) {
         const r = gRows[ri];
         const tr = document.createElement("tr");
         tr.className = "row";
-        tr.draggable = false;
+        tr.draggable = true;
         tr.dataset.type = "ticker";
         tr.dataset.symbol = r.symbol;
         tr.dataset.groupId = g.id;
@@ -1028,7 +1027,7 @@ function renderRows(rows, store) {
       const r = ordered[i];
       const tr = document.createElement("tr");
       tr.className = "row";
-      tr.draggable = false;
+      tr.draggable = true;
       tr.dataset.type = "ticker";
       tr.dataset.symbol = r.symbol;
 
@@ -1144,25 +1143,26 @@ function updateTotalsBox(store, rows) {
 
   $("#totValue").textContent = fmtMoney(totalValue);
 
-  const pill = (id, dollars, pct) => {
+  const updateDelta = (id, dollars, pct) => {
     const el = $(id);
     if (!el) return;
+    const dEl = el.querySelector(".tdelta-d");
+    const pEl = el.querySelector(".tdelta-p");
+    el.classList.remove("good", "bad");
     if (!hasValue || !Number.isFinite(dollars)) {
-      el.textContent = el.textContent.split(":")[0] + ": n/a";
-      el.classList.remove("good", "bad");
+      if (dEl) dEl.textContent = "\u2013";
+      if (pEl) pEl.textContent = "";
       return;
     }
-    const dollarStr = (dollars >= 0 ? "+" : "") + fmtMoney(dollars);
-    const pctStr = Number.isFinite(pct) ? " (" + fmtPct(pct) + ")" : "";
-    el.textContent = el.textContent.split(":")[0] + ": " + dollarStr + pctStr;
-    el.classList.remove("good", "bad");
+    if (dEl) dEl.textContent = (dollars >= 0 ? "+" : "") + fmtMoney(dollars);
+    if (pEl) pEl.textContent = Number.isFinite(pct) ? "(" + fmtPct(pct) + ")" : "";
     if (dollars > 0) el.classList.add("good");
     if (dollars < 0) el.classList.add("bad");
   };
 
-  pill("#totDay", dDay, pctDay);
-  pill("#tot7", d7, pct7);
-  pill("#tot30", d30, pct30);
+  updateDelta("#totDay", dDay, pctDay);
+  updateDelta("#tot7", d7, pct7);
+  updateDelta("#tot30", d30, pct30);
 
   box.style.display = "flex";
 }
@@ -1245,13 +1245,7 @@ function initRowDnD() {
   tbody.addEventListener("dragend", () => {
     tbody.querySelectorAll("tr.dragging").forEach((x) => x.classList.remove("dragging"));
     tbody.querySelectorAll(".drop-before,.drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
-    tbody.querySelectorAll("tr[draggable='true']").forEach((x) => { x.draggable = false; });
     DRAG_STATE = null;
-  });
-
-  // Reset draggable if user releases mouse without dragging
-  document.addEventListener("mouseup", () => {
-    tbody.querySelectorAll("tr[draggable='true']").forEach((x) => { x.draggable = false; });
   });
 
   tbody.addEventListener("dragover", (e) => {
@@ -1652,14 +1646,27 @@ async function showAiSummary(rowOrSymbol) {
     const asOfIso = todayIso();
     const asOfPretty = fmtDatePrettyFromIso(asOfIso) || "";
 
+    if (!token) {
+      setAiBodyMessage("A Finnhub API token is required for news data.\nAdd one in Preferences (\u2699) to enable AI summaries.");
+      setAiLoading(false);
+      return;
+    }
+
     let news = [];
-    if (token) {
-      try {
-        const from = isoDaysAgo(30);
-        const to = asOfIso;
-        const raw = await fetchJson(finnhubCompanyNewsUrl(symbol, from, to, token));
-        news = selectDiverseNews(raw, 12);
-      } catch (e) {}
+    let newsFetchError = null;
+    try {
+      const from = isoDaysAgo(30);
+      const to = asOfIso;
+      const raw = await fetchJson(finnhubCompanyNewsUrl(symbol, from, to, token));
+      news = selectDiverseNews(Array.isArray(raw) ? raw : [], 12);
+    } catch (e) {
+      newsFetchError = String(e.message || e);
+    }
+
+    if (newsFetchError) {
+      setAiBodyMessage(`Could not fetch news for ${symbol}.\n\n${newsFetchError}`);
+      setAiLoading(false);
+      return;
     }
 
     let earnings = [];
