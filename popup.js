@@ -850,15 +850,13 @@ function renderRows(rows, store) {
       }
 
       const inp = document.createElement("input");
-      inp.className = "shares no-drag";
+      inp.className = "shares";
       inp.type = "text";
       inp.inputMode = "decimal";
       inp.autocomplete = "off";
       inp.spellcheck = false;
       inp.value = Number.isFinite(r.shares) && r.shares !== 0 ? String(r.shares) : "";
       inp.placeholder = "Shares";
-      inp.addEventListener("mousedown", (e) => e.stopPropagation());
-      inp.addEventListener("click", (e) => e.stopPropagation());
       inp.addEventListener("input", async () => {
         const raw = (inp.value || "").trim();
         const v = raw === "" ? 0 : Number(raw);
@@ -896,11 +894,9 @@ function renderRows(rows, store) {
 
     if (!isGroup && store.aiEnabled) {
       const ai = document.createElement("button");
-      ai.className = "mini ai no-drag";
+      ai.className = "mini ai";
       ai.title = "AI summary";
       ai.textContent = "\u2728";
-      ai.draggable = false;
-      ai.addEventListener("mousedown", (e) => e.stopPropagation());
       ai.addEventListener("click", async (e) => {
         e.stopPropagation();
         await showAiSummary(r);
@@ -910,11 +906,9 @@ function renderRows(rows, store) {
 
     if (!isGroup) {
       const rm = document.createElement("button");
-      rm.className = "mini rm no-drag";
+      rm.className = "mini rm";
       rm.title = "Remove";
       rm.textContent = "\u00d7";
-      rm.draggable = false;
-      rm.addEventListener("mousedown", (e) => e.stopPropagation());
       rm.addEventListener("click", async (e) => {
         e.stopPropagation();
         await removeTicker(r.symbol);
@@ -922,25 +916,30 @@ function renderRows(rows, store) {
       actions.appendChild(rm);
     }
 
-    // Drag handle (grip icon) — dragging is allowed only when initiated here
-    const grip = document.createElement("div");
-    grip.className = "drag-handle";
-    grip.title = "Drag to reorder";
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("width", "10");
-    svg.setAttribute("height", "14");
-    svg.setAttribute("viewBox", "0 0 10 14");
-    const positions = [[3,2],[7,2],[3,7],[7,7],[3,12],[7,12]];
-    for (const [cx, cy] of positions) {
-      const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-      c.setAttribute("cx", String(cx));
-      c.setAttribute("cy", String(cy));
-      c.setAttribute("r", "1.5");
-      c.setAttribute("fill", "currentColor");
-      svg.appendChild(c);
-    }
-    grip.appendChild(svg);
-    actions.appendChild(grip);
+    // ▲▼ arrows for reordering
+    const up = document.createElement("button");
+    up.className = "mini arrow";
+    up.title = "Move up";
+    up.textContent = "\u25b2";
+    up.disabled = !(meta && meta.canUp);
+    up.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (isGroup) await moveGroupStep(meta.groupId, -1);
+      else await moveTickerStep(r.symbol, -1);
+    });
+    actions.appendChild(up);
+
+    const dn = document.createElement("button");
+    dn.className = "mini arrow";
+    dn.title = "Move down";
+    dn.textContent = "\u25bc";
+    dn.disabled = !(meta && meta.canDown);
+    dn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (isGroup) await moveGroupStep(meta.groupId, 1);
+      else await moveTickerStep(r.symbol, 1);
+    });
+    actions.appendChild(dn);
 
     td.appendChild(actions);
     tr.appendChild(td);
@@ -958,7 +957,6 @@ function renderRows(rows, store) {
       // Group row aligned to columns
       const groupRow = document.createElement("tr");
       groupRow.className = "group-row row";
-      groupRow.draggable = true;
       groupRow.dataset.type = "group";
       groupRow.dataset.groupId = g.id;
 
@@ -987,7 +985,6 @@ function renderRows(rows, store) {
         const r = gRows[ri];
         const tr = document.createElement("tr");
         tr.className = "row";
-        tr.draggable = true;
         tr.dataset.type = "ticker";
         tr.dataset.symbol = r.symbol;
         tr.dataset.groupId = g.id;
@@ -1027,7 +1024,6 @@ function renderRows(rows, store) {
       const r = ordered[i];
       const tr = document.createElement("tr");
       tr.className = "row";
-      tr.draggable = true;
       tr.dataset.type = "ticker";
       tr.dataset.symbol = r.symbol;
 
@@ -1106,6 +1102,8 @@ function updateTotalsBox(store, rows) {
 
   if (!store || !store.personalValueEnabled || !Array.isArray(rows) || !rows.length) {
     box.style.display = "none";
+    const tw = $(".tablewrap");
+    if (tw) tw.classList.remove("has-totals");
     return;
   }
 
@@ -1128,7 +1126,6 @@ function updateTotalsBox(store, rows) {
     if (Number.isFinite(d7i)) d7 += d7i;
     if (Number.isFinite(d30i)) d30 += d30i;
 
-    // Accumulate previous values for weighted % calculation
     const fDay = safePctToFrac(r.dayPct);
     const f7 = safePctToFrac(r.weekPct);
     const f30 = safePctToFrac(r.monthPct);
@@ -1141,30 +1138,73 @@ function updateTotalsBox(store, rows) {
   const pct7 = prev7 > 0 ? (d7 / prev7) * 100 : NaN;
   const pct30 = prev30 > 0 ? (d30 / prev30) * 100 : NaN;
 
-  $("#totValue").textContent = fmtMoney(totalValue);
+  // Build totals row aligned to table columns
+  const container = $("#totalsRow");
+  while (container.firstChild) container.removeChild(container.firstChild);
 
-  const updateDelta = (id, dollars, pct) => {
-    const el = $(id);
-    if (!el) return;
-    const dEl = el.querySelector(".tdelta-d");
-    const pEl = el.querySelector(".tdelta-p");
-    el.classList.remove("good", "bad");
-    if (!hasValue || !Number.isFinite(dollars)) {
-      if (dEl) dEl.textContent = "\u2013";
-      if (pEl) pEl.textContent = "";
-      return;
-    }
-    if (dEl) dEl.textContent = (dollars >= 0 ? "+" : "") + fmtMoney(dollars);
-    if (pEl) pEl.textContent = Number.isFinite(pct) ? "(" + fmtPct(pct) + ")" : "";
-    if (dollars > 0) el.classList.add("good");
-    if (dollars < 0) el.classList.add("bad");
+  const order = normalizeColumnOrder(store.columnOrder, store);
+  const cols = visibleCols(store);
+  const colByKey = new Map(cols.map((c) => [c.key, c]));
+
+  const deltaData = {
+    dayPct: { dollars: dDay, pct: pctDay },
+    weekPct: { dollars: d7, pct: pct7 },
+    monthPct: { dollars: d30, pct: pct30 }
   };
 
-  updateDelta("#totDay", dDay, pctDay);
-  updateDelta("#tot7", d7, pct7);
-  updateDelta("#tot30", d30, pct30);
+  for (const key of order) {
+    if (!colByKey.has(key)) continue;
+    if ((key === "shares" || key === "value") && !store.personalValueEnabled) continue;
+    const col = colByKey.get(key);
+    const cell = document.createElement("div");
+    cell.className = "totals-cell " + (col.cls || "");
 
-  box.style.display = "flex";
+    if (key === "symbol") {
+      const lbl = document.createElement("div");
+      lbl.className = "label";
+      lbl.textContent = "TOTAL";
+      cell.appendChild(lbl);
+    } else if (key === "name") {
+      const val = document.createElement("div");
+      val.className = "value money";
+      val.textContent = fmtMoney(totalValue);
+      cell.appendChild(val);
+    } else if (deltaData[key]) {
+      const d = deltaData[key];
+      const wrap = document.createElement("div");
+      wrap.className = "tdelta";
+      if (hasValue && Number.isFinite(d.dollars)) {
+        if (d.dollars > 0) wrap.classList.add("good");
+        if (d.dollars < 0) wrap.classList.add("bad");
+        const dEl = document.createElement("div");
+        dEl.className = "tdelta-d";
+        dEl.textContent = (d.dollars >= 0 ? "+" : "") + fmtMoney(d.dollars);
+        wrap.appendChild(dEl);
+        const pEl = document.createElement("div");
+        pEl.className = "tdelta-p";
+        pEl.textContent = Number.isFinite(d.pct) ? "(" + fmtPct(d.pct) + ")" : "";
+        wrap.appendChild(pEl);
+      } else {
+        const dEl = document.createElement("div");
+        dEl.className = "tdelta-d";
+        dEl.textContent = "\u2013";
+        wrap.appendChild(dEl);
+      }
+      cell.appendChild(wrap);
+    }
+    // Other columns (price, mcap, shares, value) left empty
+
+    container.appendChild(cell);
+  }
+
+  // Empty cell for actions column
+  const actCell = document.createElement("div");
+  actCell.className = "totals-cell col-act";
+  container.appendChild(actCell);
+
+  box.style.display = "block";
+  const tw = $(".tablewrap");
+  if (tw) tw.classList.add("has-totals");
 }
 
 /* ---------- Column drag reorder ---------- */
@@ -1211,123 +1251,71 @@ function initColumnDnD(store) {
   });
 }
 
-/* ---------- Row drag reorder ---------- */
-let DRAG_STATE = null;
+/* ---------- Step-move helpers (▲▼ arrows) ---------- */
+async function moveGroupStep(groupId, dir) {
+  const s = await getStore();
+  const groups = (s.groups || []).slice();
+  const fromIdx = groups.findIndex((g) => g.id === groupId);
+  if (fromIdx < 0) return;
+  const toIdx = fromIdx + (dir < 0 ? -1 : 1);
+  if (toIdx < 0 || toIdx >= groups.length) return;
+  const tmp = groups[toIdx];
+  groups[toIdx] = groups[fromIdx];
+  groups[fromIdx] = tmp;
+  await setStore({ groups });
+  renderTableOnly();
+}
 
-function initRowDnD() {
-  const tbody = $("#rows");
-
-  tbody.addEventListener("dragstart", (e) => {
-    const tr = e.target.closest("tr");
-    if (!tr) return;
-
-    // Only allow drag initiated from the grip handle
-    if (!e.target.closest(".drag-handle")) {
-      e.preventDefault();
-      return;
-    }
-
-    const type = tr.dataset.type;
-    if (type !== "ticker" && type !== "group") return;
-
-    DRAG_STATE = {
-      type,
-      symbol: tr.dataset.symbol || null,
-      groupId: tr.dataset.groupId || null
-    };
-
-    tr.classList.add("dragging");
-
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", DRAG_STATE.symbol || DRAG_STATE.groupId || "row");
-  }, { capture: true });
-
-  tbody.addEventListener("dragend", () => {
-    tbody.querySelectorAll("tr.dragging").forEach((x) => x.classList.remove("dragging"));
-    tbody.querySelectorAll(".drop-before,.drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
-    DRAG_STATE = null;
-  });
-
-  tbody.addEventListener("dragover", (e) => {
-    if (!DRAG_STATE) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-
-    const tr = e.target.closest("tr");
-    tbody.querySelectorAll(".drop-before,.drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
-    if (!tr) return;
-
-    const rect = tr.getBoundingClientRect();
-    const after = (e.clientY - rect.top) > rect.height / 2;
-    tr.classList.add(after ? "drop-after" : "drop-before");
-  });
-
-  tbody.addEventListener("drop", async (e) => {
-    if (!DRAG_STATE) return;
-    e.preventDefault();
-
-    const storeNow = await getStore();
-    const tr = e.target.closest("tr");
-    const targetType = tr ? tr.dataset.type : null;
-
-    // Find "after" from class, fallback to bottom if no target row
-    const after = tr ? tr.classList.contains("drop-after") : true;
-
-    if (storeNow.groupsEnabled) {
-      if (DRAG_STATE.type === "group") {
-        const fromGid = DRAG_STATE.groupId;
-        let toGid = null;
-
-        if (targetType === "group") toGid = tr.dataset.groupId;
-        if (targetType === "ticker") toGid = tr.dataset.groupId;
-
-        // drop on empty space => move to end
-        if (!toGid) {
-          const lastGroup = (storeNow.groups || []).slice(-1)[0];
-          toGid = lastGroup ? lastGroup.id : fromGid;
-        }
-
-        if (fromGid && toGid) await moveGroup(fromGid, toGid, after);
-      }
-
-      if (DRAG_STATE.type === "ticker") {
-        const sym = DRAG_STATE.symbol;
-        if (!sym) return;
-
-        let fromGid = findSymbolGroupId(sym, storeNow.groupTickers || {});
-        let toGid = null;
-        let targetSym = null;
-
-        if (targetType === "group") {
-          toGid = tr.dataset.groupId;
-        } else if (targetType === "ticker") {
-          toGid = tr.dataset.groupId;
-          targetSym = tr.dataset.symbol;
-        } else {
-          // empty area => last group
-          const lastGroup = (storeNow.groups || []).slice(-1)[0];
-          toGid = lastGroup ? lastGroup.id : fromGid;
-        }
-
-        if (!toGid) toGid = fromGid;
-        await moveTickerGrouped(sym, fromGid, toGid, targetSym, after);
+async function moveTickerStep(symbol, dir) {
+  const s = await getStore();
+  const sym = String(symbol).toUpperCase();
+  if (s.groupsEnabled) {
+    const groups = s.groups || [];
+    const gt = { ...(s.groupTickers || {}) };
+    const gid = findSymbolGroupId(sym, gt);
+    if (!gid) return;
+    const gIdx = groups.findIndex((g) => g.id === gid);
+    const arr = (Array.isArray(gt[gid]) ? gt[gid] : []).map((x) => String(x).toUpperCase());
+    const idx = arr.findIndex((x) => x === sym);
+    if (idx < 0) return;
+    if (dir < 0) {
+      if (idx > 0) {
+        [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
+        gt[gid] = arr;
+      } else {
+        if (gIdx <= 0) return;
+        const prevGid = groups[gIdx - 1].id;
+        const prevArr = (Array.isArray(gt[prevGid]) ? gt[prevGid] : []).map((x) => String(x).toUpperCase());
+        gt[gid] = arr.slice(1);
+        prevArr.push(sym);
+        gt[prevGid] = prevArr;
       }
     } else {
-      if (DRAG_STATE.type !== "ticker") return;
-      const sym = DRAG_STATE.symbol;
-      if (!sym) return;
-
-      let targetSym = null;
-      if (targetType === "ticker") targetSym = tr.dataset.symbol;
-
-      await moveTickerFlat(sym, targetSym, after);
+      if (idx < arr.length - 1) {
+        [arr[idx + 1], arr[idx]] = [arr[idx], arr[idx + 1]];
+        gt[gid] = arr;
+      } else {
+        if (gIdx < 0 || gIdx >= groups.length - 1) return;
+        const nextGid = groups[gIdx + 1].id;
+        const nextArr = (Array.isArray(gt[nextGid]) ? gt[nextGid] : []).map((x) => String(x).toUpperCase());
+        gt[gid] = arr.slice(0, arr.length - 1);
+        nextArr.unshift(sym);
+        gt[nextGid] = nextArr;
+      }
     }
-
-    tbody.querySelectorAll(".drop-before,.drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
-    DRAG_STATE = null;
-
+    await setStore({ groupTickers: gt });
     renderTableOnly();
-  });
+    return;
+  }
+  // Flat list
+  const tickers = (s.tickers || []).slice().map((x) => String(x).toUpperCase());
+  const i = tickers.findIndex((x) => x === sym);
+  if (i < 0) return;
+  const j = i + (dir < 0 ? -1 : 1);
+  if (j < 0 || j >= tickers.length) return;
+  [tickers[i], tickers[j]] = [tickers[j], tickers[i]];
+  await setStore({ tickers, sortKey: "manual" });
+  renderTableOnly();
 }
 
 /* ---------- Move helpers ---------- */
@@ -1348,68 +1336,6 @@ function removeSymbolFromAllGroups(symbol, groupTickers) {
   }
 }
 
-async function moveGroup(fromGid, toGid, after) {
-  const s = await getStore();
-  const groups = (s.groups || []).slice();
-  const fromIdx = groups.findIndex((g) => g.id === fromGid);
-  const toIdx = groups.findIndex((g) => g.id === toGid);
-  if (fromIdx < 0 || toIdx < 0) return;
-
-  const [moved] = groups.splice(fromIdx, 1);
-  let insertIdx = toIdx;
-  if (fromIdx < toIdx) insertIdx = toIdx - 1;
-  if (after) insertIdx += 1;
-
-  groups.splice(Math.max(0, Math.min(insertIdx, groups.length)), 0, moved);
-  await setStore({ groups });
-}
-
-async function moveTickerGrouped(symbol, fromGid, toGid, targetSymbol, after) {
-  const s = await getStore();
-  const gt = { ...(s.groupTickers || {}) };
-
-  // ensure keys exist
-  (s.groups || []).forEach((g) => { if (!gt[g.id]) gt[g.id] = []; });
-  if (!gt[toGid]) gt[toGid] = [];
-
-  removeSymbolFromAllGroups(symbol, gt);
-
-  const dest = Array.isArray(gt[toGid]) ? gt[toGid].slice() : [];
-  const sym = String(symbol).toUpperCase();
-
-  if (targetSymbol) {
-    const t = String(targetSymbol).toUpperCase();
-    const idx = dest.findIndex((x) => String(x).toUpperCase() === t);
-    if (idx >= 0) dest.splice(after ? idx + 1 : idx, 0, sym);
-    else dest.push(sym);
-  } else {
-    dest.push(sym);
-  }
-
-  gt[toGid] = dest;
-  await setStore({ groupTickers: gt });
-}
-
-async function moveTickerFlat(symbol, targetSymbol, after) {
-  const s = await getStore();
-  const tickers = (s.tickers || []).slice().map((x) => String(x).toUpperCase());
-  const sym = String(symbol).toUpperCase();
-
-  const fromIdx = tickers.findIndex((x) => x === sym);
-  if (fromIdx < 0) return;
-  tickers.splice(fromIdx, 1);
-
-  if (targetSymbol) {
-    const t = String(targetSymbol).toUpperCase();
-    const toIdx = tickers.findIndex((x) => x === t);
-    if (toIdx >= 0) tickers.splice(after ? toIdx + 1 : toIdx, 0, sym);
-    else tickers.push(sym);
-  } else {
-    tickers.push(sym);
-  }
-
-  await setStore({ tickers, sortKey: "manual" });
-}
 
 
 /* ---------- Add / remove ---------- */
@@ -1967,9 +1893,6 @@ async function init() {
   $("#aiModal").addEventListener("click", (e) => {
     if (e.target.id === "aiModal") closeAiModal();
   });
-
-  // Initialize row drag-and-drop (event delegation, only needs to run once)
-  initRowDnD();
 
   // First paint: snapshot, then refresh
   await render(false);

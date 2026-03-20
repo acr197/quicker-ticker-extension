@@ -68,6 +68,7 @@
       border-radius:14px;
       overflow:hidden;
     }
+    .tablewrap.has-totals{border-radius:14px 14px 0 0; border-bottom:none}
     table{width:100%; border-collapse:collapse; table-layout:fixed}
     thead th{
       text-align:left;
@@ -111,7 +112,7 @@
     .col-mcap{width:74px}
     .col-shares{width:56px}
     .col-value{width:82px}
-    .col-act{width:90px; text-align:right; overflow:visible}
+    .col-act{width:114px; text-align:right; overflow:visible}
 
     .pct{
       display:block;
@@ -129,10 +130,6 @@
     .money{font-variant-numeric:tabular-nums}
     .sym{font-weight:800; letter-spacing:.2px}
     .row{cursor:default}
-    .drop-before{box-shadow:inset 0 2px 0 rgba(255,255,255,.22)}
-    .drop-after{box-shadow:inset 0 -2px 0 rgba(255,255,255,.22)}
-
-    .row.dragging{opacity:.6}
     .row .rm{cursor:pointer}
     .row .ai{cursor:pointer}
     .row input.shares{
@@ -161,16 +158,7 @@
     .mini svg{opacity:.9}
     .mini:active{transform:translateY(1px)}
     .mini:disabled{opacity:.55; cursor:not-allowed}
-    .drag-handle{
-      display:grid; place-items:center;
-      width:22px; height:22px;
-      cursor:grab;
-      opacity:.4;
-      border-radius:9px;
-      flex:0 0 auto;
-    }
-    .drag-handle:hover{opacity:.7}
-    .drag-handle:active{cursor:grabbing; opacity:.9}
+    .arrow{font-size:8px; line-height:1}
     .group-row{
       background:rgba(255,255,255,.02);
       font-weight:800;
@@ -305,25 +293,25 @@
 
     /* Totals */
     .totals{
-      margin-top:10px;
+      margin-top:0;
       background:rgba(255,255,255,.03);
       border:1px solid var(--line);
-      border-radius:14px;
-      padding:10px 12px;
-      display:flex;
-      align-items:center;
-      gap:0;
+      border-top:none;
+      border-radius:0 0 14px 14px;
+      overflow:hidden;
     }
+    .totals-row{
+      display:table; width:100%; table-layout:fixed;
+    }
+    .totals-cell{display:table-cell; padding:8px 8px; vertical-align:middle}
     .totals .label{color:var(--muted); font-size:11px; font-weight:900; letter-spacing:1px}
     .totals .value{font-weight:900; font-size:14px}
-    .totals-deltas{display:flex; gap:8px; margin-left:14px}
     .tdelta{
-      padding:5px 10px;
+      padding:4px 6px;
       border-radius:10px;
       border:1px solid rgba(255,255,255,.10);
       background:rgba(255,255,255,.03);
-      min-width:72px;
-      text-align:right;
+      text-align:center;
     }
     .tdelta.good{background:var(--good); border-color:var(--good2)}
     .tdelta.bad{background:var(--bad); border-color:var(--bad2)}
@@ -367,15 +355,7 @@
     </div>
 
     <div class="totals" id="totalsBox" style="display:none">
-      <div>
-        <div class="label">TOTAL VALUE</div>
-        <div class="value money" id="totValue">$0.00</div>
-      </div>
-      <div class="totals-deltas">
-        <div class="tdelta" id="totDay"><div class="tdelta-d">–</div><div class="tdelta-p"></div></div>
-        <div class="tdelta" id="tot7"><div class="tdelta-d">–</div><div class="tdelta-p"></div></div>
-        <div class="tdelta" id="tot30"><div class="tdelta-d">–</div><div class="tdelta-p"></div></div>
-      </div>
+      <div class="totals-row" id="totalsRow"></div>
     </div>
 
     <div class="sponsor" id="sponsorBox" style="display:none">
