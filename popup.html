@@ -111,7 +111,7 @@
     .col-mcap{width:74px}
     .col-shares{width:56px}
     .col-value{width:82px}
-    .col-act{width:128px; text-align:right; overflow:visible}
+    .col-act{width:90px; text-align:right; overflow:visible}
 
     .pct{
       display:block;
@@ -161,6 +161,16 @@
     .mini svg{opacity:.9}
     .mini:active{transform:translateY(1px)}
     .mini:disabled{opacity:.55; cursor:not-allowed}
+    .drag-handle{
+      display:grid; place-items:center;
+      width:22px; height:22px;
+      cursor:grab;
+      opacity:.4;
+      border-radius:9px;
+      flex:0 0 auto;
+    }
+    .drag-handle:hover{opacity:.7}
+    .drag-handle:active{cursor:grabbing; opacity:.9}
     .group-row{
       background:rgba(255,255,255,.02);
       font-weight:800;
@@ -355,6 +365,18 @@
       </table>
     </div>
 
+    <div class="totals" id="totalsBox" style="display:none">
+      <div>
+        <div class="label">TOTAL VALUE</div>
+        <div class="value money" id="totValue">$0.00</div>
+      </div>
+      <div class="pills">
+        <div class="pill" id="totDay">Today: n/a</div>
+        <div class="pill" id="tot7">7d: n/a</div>
+        <div class="pill" id="tot30">30d: n/a</div>
+      </div>
+    </div>
+
     <div class="sponsor" id="sponsorBox" style="display:none">
       <div class="sponline">
         <div class="sponlabel">SPONSORED</div>
@@ -368,18 +390,6 @@
         </div>
         <div style="flex:1"></div>
         <button id="sponsorOpen">Open</button>
-      </div>
-    </div>
-
-    <div class="totals" id="totalsBox" style="display:none">
-      <div>
-        <div class="label">TOTAL VALUE</div>
-        <div class="value money" id="totValue">$0.00</div>
-      </div>
-      <div class="pills">
-        <div class="pill" id="totDay">Today: n/a</div>
-        <div class="pill" id="tot7">7d: n/a</div>
-        <div class="pill" id="tot30">30d: n/a</div>
       </div>
     </div>
   </div>

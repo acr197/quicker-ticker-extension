@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Quicker Ticker",
-  "version": "1.6.7",
+  "version": "1.7.0",
   "description": "Fast stock + ETF popup watchlist with grouping, up/down ordering, optional portfolio value, and optional AI summaries.",
   "action": {
     "default_title": "Quicker Ticker",

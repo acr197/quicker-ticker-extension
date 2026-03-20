@@ -46,7 +46,7 @@ function toggleValue(el) {
 
 function rebuildGroupList(store, onDirty) {
   const box = $("#groupList");
-  box.innerHTML = "";
+  while (box.firstChild) box.removeChild(box.firstChild);
 
   const maxGroups = 5;
   $("#groupCount").textContent = String(store.groups.length);

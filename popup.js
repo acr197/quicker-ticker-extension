@@ -174,8 +174,9 @@ function defaultColumnOrder(store) {
 }
 
 function clearSuggest() {
-  $("#suggest").classList.add("hidden");
-  $("#suggest").innerHTML = "";
+  const box = $("#suggest");
+  box.classList.add("hidden");
+  while (box.firstChild) box.removeChild(box.firstChild);
 }
 
 let AI_ABORT = null;
@@ -198,7 +199,7 @@ function setAiLoading(isLoading, label) {
 
 function setAiBodyMessage(msg) {
   const body = $("#aiBody");
-  body.innerHTML = "";
+  while (body.firstChild) body.removeChild(body.firstChild);
   body.textContent = msg || "";
 }
 
@@ -270,7 +271,7 @@ function postProcessAiLines(rawText, asOfPretty) {
 
 function renderAiLines(lines, newsList) {
   const body = $("#aiBody");
-  body.innerHTML = "";
+  while (body.firstChild) body.removeChild(body.firstChild);
 
   if (!Array.isArray(lines) || !lines.length) {
     body.textContent = "No summary returned.";
@@ -690,7 +691,6 @@ async function buildRow(symbol, store) {
     weekPct,
     monthPct,
     mcap,
-    assetType,
     shares,
     value,
     tsQuote,
@@ -725,7 +725,7 @@ function isAlreadyAdded(symbol, store) {
 /* ---------- Rendering ---------- */
 function renderHeader(store) {
   const hdr = $("#hdr");
-  hdr.innerHTML = "";
+  while (hdr.firstChild) hdr.removeChild(hdr.firstChild);
 
   const cols = visibleCols(store);
   const order = normalizeColumnOrder(store.columnOrder, store);
@@ -786,7 +786,7 @@ function newestTimestampForColumn(colKey) {
 
 function renderRows(rows, store) {
   const tbody = $("#rows");
-  tbody.innerHTML = "";
+  while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
 
   const cols = visibleCols(store);
   const order = normalizeColumnOrder(store.columnOrder, store);
@@ -898,7 +898,7 @@ function renderRows(rows, store) {
       const ai = document.createElement("button");
       ai.className = "mini ai no-drag";
       ai.title = "AI summary";
-      ai.innerHTML = "✨";
+      ai.textContent = "\u2728";
       ai.draggable = false;
       ai.addEventListener("mousedown", (e) => e.stopPropagation());
       ai.addEventListener("click", async (e) => {
@@ -908,47 +908,11 @@ function renderRows(rows, store) {
       actions.appendChild(ai);
     }
 
-    const up = document.createElement("button");
-    up.className = "mini no-drag";
-    up.title = "Move up";
-    up.innerHTML = "▲";
-    up.disabled = !(meta && meta.canUp);
-    up.draggable = false;
-    up.addEventListener("mousedown", (e) => e.stopPropagation());
-    up.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (up.disabled) return;
-      if (isGroup) {
-        await moveGroupStep(meta.groupId, -1);
-      } else {
-        await moveTickerStep(r.symbol, -1);
-      }
-    });
-    actions.appendChild(up);
-
-    const down = document.createElement("button");
-    down.className = "mini no-drag";
-    down.title = "Move down";
-    down.innerHTML = "▼";
-    down.disabled = !(meta && meta.canDown);
-    down.draggable = false;
-    down.addEventListener("mousedown", (e) => e.stopPropagation());
-    down.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      if (down.disabled) return;
-      if (isGroup) {
-        await moveGroupStep(meta.groupId, 1);
-      } else {
-        await moveTickerStep(r.symbol, 1);
-      }
-    });
-    actions.appendChild(down);
-
     if (!isGroup) {
       const rm = document.createElement("button");
       rm.className = "mini rm no-drag";
       rm.title = "Remove";
-      rm.innerHTML = "×";
+      rm.textContent = "\u00d7";
       rm.draggable = false;
       rm.addEventListener("mousedown", (e) => e.stopPropagation());
       rm.addEventListener("click", async (e) => {
@@ -957,6 +921,27 @@ function renderRows(rows, store) {
       });
       actions.appendChild(rm);
     }
+
+    // Drag handle (grip icon)
+    const grip = document.createElement("div");
+    grip.className = "drag-handle";
+    grip.title = "Drag to reorder";
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("width", "10");
+    svg.setAttribute("height", "14");
+    svg.setAttribute("viewBox", "0 0 10 14");
+    const positions = [[3,2],[7,2],[3,7],[7,7],[3,12],[7,12]];
+    for (const [cx, cy] of positions) {
+      const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      c.setAttribute("cx", String(cx));
+      c.setAttribute("cy", String(cy));
+      c.setAttribute("r", "1.5");
+      c.setAttribute("fill", "currentColor");
+      svg.appendChild(c);
+    }
+    grip.appendChild(svg);
+    grip.addEventListener("mousedown", () => { tr.draggable = true; });
+    actions.appendChild(grip);
 
     td.appendChild(actions);
     tr.appendChild(td);
@@ -1127,6 +1112,7 @@ function updateTotalsBox(store, rows) {
 
   let totalValue = 0;
   let dDay = 0, d7 = 0, d30 = 0;
+  let prevDay = 0, prev7 = 0, prev30 = 0;
   let hasValue = false;
 
   for (const r of rows) {
@@ -1142,28 +1128,41 @@ function updateTotalsBox(store, rows) {
     if (Number.isFinite(dd)) dDay += dd;
     if (Number.isFinite(d7i)) d7 += d7i;
     if (Number.isFinite(d30i)) d30 += d30i;
+
+    // Accumulate previous values for weighted % calculation
+    const fDay = safePctToFrac(r.dayPct);
+    const f7 = safePctToFrac(r.weekPct);
+    const f30 = safePctToFrac(r.monthPct);
+    if (val > 0 && Number.isFinite(fDay)) prevDay += val / (1 + fDay);
+    if (val > 0 && Number.isFinite(f7)) prev7 += val / (1 + f7);
+    if (val > 0 && Number.isFinite(f30)) prev30 += val / (1 + f30);
   }
+
+  const pctDay = prevDay > 0 ? (dDay / prevDay) * 100 : NaN;
+  const pct7 = prev7 > 0 ? (d7 / prev7) * 100 : NaN;
+  const pct30 = prev30 > 0 ? (d30 / prev30) * 100 : NaN;
 
   $("#totValue").textContent = fmtMoney(totalValue);
 
-  const pill = (id, v) => {
+  const pill = (id, dollars, pct) => {
     const el = $(id);
     if (!el) return;
-    if (!hasValue || !Number.isFinite(v)) {
+    if (!hasValue || !Number.isFinite(dollars)) {
       el.textContent = el.textContent.split(":")[0] + ": n/a";
       el.classList.remove("good", "bad");
       return;
     }
-    const s = (v >= 0 ? "+" : "") + fmtMoney(v);
-    el.textContent = el.textContent.split(":")[0] + ": " + s;
+    const dollarStr = (dollars >= 0 ? "+" : "") + fmtMoney(dollars);
+    const pctStr = Number.isFinite(pct) ? " (" + fmtPct(pct) + ")" : "";
+    el.textContent = el.textContent.split(":")[0] + ": " + dollarStr + pctStr;
     el.classList.remove("good", "bad");
-    if (v > 0) el.classList.add("good");
-    if (v < 0) el.classList.add("bad");
+    if (dollars > 0) el.classList.add("good");
+    if (dollars < 0) el.classList.add("bad");
   };
 
-  pill("#totDay", dDay);
-  pill("#tot7", d7);
-  pill("#tot30", d30);
+  pill("#totDay", dDay, pctDay);
+  pill("#tot7", d7, pct7);
+  pill("#tot30", d30, pct30);
 
   box.style.display = "flex";
 }
@@ -1215,15 +1214,15 @@ function initColumnDnD(store) {
 /* ---------- Row drag reorder ---------- */
 let DRAG_STATE = null;
 
-function initRowDnD(store) {
+function initRowDnD() {
   const tbody = $("#rows");
 
   tbody.addEventListener("dragstart", (e) => {
     const tr = e.target.closest("tr");
     if (!tr) return;
 
-    // Don't start dragging from interactive controls
-    if (e.target.closest(".no-drag")) {
+    // Only allow drag initiated from the grip handle
+    if (!e.target.closest(".drag-handle")) {
       e.preventDefault();
       return;
     }
@@ -1240,14 +1239,19 @@ function initRowDnD(store) {
     tr.classList.add("dragging");
 
     e.dataTransfer.effectAllowed = "move";
-    // Some Chrome builds are pickier if the payload is empty
     e.dataTransfer.setData("text/plain", DRAG_STATE.symbol || DRAG_STATE.groupId || "row");
   }, { capture: true });
 
   tbody.addEventListener("dragend", () => {
     tbody.querySelectorAll("tr.dragging").forEach((x) => x.classList.remove("dragging"));
     tbody.querySelectorAll(".drop-before,.drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
+    tbody.querySelectorAll("tr[draggable='true']").forEach((x) => { x.draggable = false; });
     DRAG_STATE = null;
+  });
+
+  // Reset draggable if user releases mouse without dragging
+  document.addEventListener("mouseup", () => {
+    tbody.querySelectorAll("tr[draggable='true']").forEach((x) => { x.draggable = false; });
   });
 
   tbody.addEventListener("dragover", (e) => {
@@ -1412,87 +1416,6 @@ async function moveTickerFlat(symbol, targetSymbol, after) {
 
   await setStore({ tickers, sortKey: "manual" });
 }
-/* ---------- One-step move (▲▼ buttons) ---------- */
-async function moveGroupStep(groupId, dir) {
-  const s = await getStore();
-  const groups = (s.groups || []).slice();
-  const fromIdx = groups.findIndex((g) => g.id === groupId);
-  if (fromIdx < 0) return;
-
-  const toIdx = fromIdx + (dir < 0 ? -1 : 1);
-  if (toIdx < 0 || toIdx >= groups.length) return;
-
-  // swap the headers, tickers stay attached to their group ids
-  const tmp = groups[toIdx];
-  groups[toIdx] = groups[fromIdx];
-  groups[fromIdx] = tmp;
-
-  await setStore({ groups });
-  renderTableOnly();
-}
-
-async function moveTickerStep(symbol, dir) {
-  const s = await getStore();
-  const sym = String(symbol).toUpperCase();
-
-  if (s.groupsEnabled) {
-    const groups = s.groups || [];
-    const gt = { ...(s.groupTickers || {}) };
-    const gid = findSymbolGroupId(sym, gt);
-    if (!gid) return;
-
-    const gIdx = groups.findIndex((g) => g.id === gid);
-    const arr = (Array.isArray(gt[gid]) ? gt[gid] : []).map((x) => String(x).toUpperCase());
-    const idx = arr.findIndex((x) => x === sym);
-    if (idx < 0) return;
-
-    if (dir < 0) {
-      if (idx > 0) {
-        // move up inside the same group
-        [arr[idx - 1], arr[idx]] = [arr[idx], arr[idx - 1]];
-        gt[gid] = arr;
-      } else {
-        // move to previous group (to the bottom)
-        if (gIdx <= 0) return;
-        const prevGid = groups[gIdx - 1].id;
-        const prevArr = (Array.isArray(gt[prevGid]) ? gt[prevGid] : []).map((x) => String(x).toUpperCase());
-        gt[gid] = arr.slice(1); // remove first
-        prevArr.push(sym);
-        gt[prevGid] = prevArr;
-      }
-    } else {
-      if (idx < arr.length - 1) {
-        // move down inside the same group
-        [arr[idx + 1], arr[idx]] = [arr[idx], arr[idx + 1]];
-        gt[gid] = arr;
-      } else {
-        // move to next group (to the top)
-        if (gIdx < 0 || gIdx >= groups.length - 1) return;
-        const nextGid = groups[gIdx + 1].id;
-        const nextArr = (Array.isArray(gt[nextGid]) ? gt[nextGid] : []).map((x) => String(x).toUpperCase());
-        gt[gid] = arr.slice(0, arr.length - 1); // remove last
-        nextArr.unshift(sym);
-        gt[nextGid] = nextArr;
-      }
-    }
-
-    await setStore({ groupTickers: gt });
-    renderTableOnly();
-    return;
-  }
-
-  // Flat list
-  const tickers = (s.tickers || []).slice().map((x) => String(x).toUpperCase());
-  const i = tickers.findIndex((x) => x === sym);
-  if (i < 0) return;
-
-  const j = i + (dir < 0 ? -1 : 1);
-  if (j < 0 || j >= tickers.length) return;
-
-  [tickers[i], tickers[j]] = [tickers[j], tickers[i]];
-  await setStore({ tickers, sortKey: "manual" });
-  renderTableOnly();
-}
 
 
 /* ---------- Add / remove ---------- */
@@ -1606,7 +1529,7 @@ async function updateSuggest() {
   if ((($("#ticker").value || "").trim()) !== q) return; // stale
 
   const box = $("#suggest");
-  box.innerHTML = "";
+  while (box.firstChild) box.removeChild(box.firstChild);
   if (!items.length) { clearSuggest(); return; }
 
   for (const it of items) {
@@ -1775,7 +1698,7 @@ async function showAiSummary(rowOrSymbol) {
     const prompt = buildAiPrompt(payload, store);
 
     const text = await runAiPrompt(prompt);
-    const lines = postProcessAiLines(text, asOfPretty || "Feb 7, 2026");
+    const lines = postProcessAiLines(text, asOfPretty || fmtDatePrettyFromIso(todayIso()));
     renderAiLines(lines, news);
   } catch (e) {
     if (e && e.name === "AbortError") {
@@ -2037,6 +1960,9 @@ async function init() {
   $("#aiModal").addEventListener("click", (e) => {
     if (e.target.id === "aiModal") closeAiModal();
   });
+
+  // Initialize row drag-and-drop (event delegation, only needs to run once)
+  initRowDnD();
 
   // First paint: snapshot, then refresh
   await render(false);
