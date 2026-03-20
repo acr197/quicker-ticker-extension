@@ -312,23 +312,24 @@
       padding:10px 12px;
       display:flex;
       align-items:center;
-      gap:10px;
-      flex-wrap:wrap;
+      gap:0;
     }
     .totals .label{color:var(--muted); font-size:11px; font-weight:900; letter-spacing:1px}
     .totals .value{font-weight:900; font-size:14px}
-    .totals .pills{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-left:auto}
-    .totals .pill{
-      padding:4px 8px;
-      border-radius:999px;
-      border:1px solid rgba(255,255,255,.12);
+    .totals-deltas{display:flex; gap:8px; margin-left:14px}
+    .tdelta{
+      padding:5px 10px;
+      border-radius:10px;
+      border:1px solid rgba(255,255,255,.10);
       background:rgba(255,255,255,.03);
-      font-weight:800;
-      font-size:11px;
-      white-space:nowrap;
+      min-width:72px;
+      text-align:right;
     }
-    .totals .pill.good{background:var(--good); outline:1px solid var(--good2)}
-    .totals .pill.bad{background:var(--bad); outline:1px solid var(--bad2)}
+    .tdelta.good{background:var(--good); border-color:var(--good2)}
+    .tdelta.bad{background:var(--bad); border-color:var(--bad2)}
+    .tdelta-d{font-weight:800; font-size:12px; white-space:nowrap; font-variant-numeric:tabular-nums}
+    .tdelta-p{font-size:10px; color:var(--muted); white-space:nowrap; margin-top:1px}
+    .tdelta.good .tdelta-p,.tdelta.bad .tdelta-p{color:inherit; opacity:.8}
     .sponlogo{width:34px; height:34px; border-radius:10px; background:rgba(255,255,255,.06); display:grid; place-items:center; font-weight:900}
     .spontext{min-width:0}
     .sponname{font-weight:900}
@@ -370,10 +371,10 @@
         <div class="label">TOTAL VALUE</div>
         <div class="value money" id="totValue">$0.00</div>
       </div>
-      <div class="pills">
-        <div class="pill" id="totDay">Today: n/a</div>
-        <div class="pill" id="tot7">7d: n/a</div>
-        <div class="pill" id="tot30">30d: n/a</div>
+      <div class="totals-deltas">
+        <div class="tdelta" id="totDay"><div class="tdelta-d">–</div><div class="tdelta-p"></div></div>
+        <div class="tdelta" id="tot7"><div class="tdelta-d">–</div><div class="tdelta-p"></div></div>
+        <div class="tdelta" id="tot30"><div class="tdelta-d">–</div><div class="tdelta-p"></div></div>
       </div>
     </div>
 
