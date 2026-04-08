@@ -42,6 +42,9 @@ const QUOTE_FIELDS = [
   'shortName',
   'longName',
   'marketCap',
+  'netAssets',
+  'totalAssets',
+  'quoteType',
   'regularMarketPreviousClose',
   'regularMarketOpen'
 ].join(',');
@@ -108,6 +111,13 @@ async function fetchQuoteBatch(symbols, retried = false) {
   const out = {};
   for (const q of list) {
     if (!q || !q.symbol) continue;
+    // Unify "size" across asset types:
+    //   * Equities + crypto  -> marketCap
+    //   * ETFs + mutual funds -> netAssets (AUM), or totalAssets as fallback
+    // The UI labels this "Market Cap" regardless of source.
+    const size = numOrNull(q.marketCap)
+      ?? numOrNull(q.netAssets)
+      ?? numOrNull(q.totalAssets);
     out[q.symbol] = {
       symbol: q.symbol,
       name: q.shortName || q.longName || q.symbol,
@@ -116,7 +126,8 @@ async function fetchQuoteBatch(symbols, retried = false) {
       changePct: numOrNull(q.regularMarketChangePercent),
       open: numOrNull(q.regularMarketOpen),
       prevClose: numOrNull(q.regularMarketPreviousClose),
-      marketCap: q.marketCap || null,
+      marketCap: size,
+      quoteType: q.quoteType || null,
       currency: q.currency || 'USD',
       fetchedAt: Date.now()
     };
