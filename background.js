@@ -68,6 +68,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           type: msg.subtype,
           symbols: msg.symbols,
           symbol: msg.symbol,
+          name: msg.name,
           range: msg.range,
           query: msg.query
         });
