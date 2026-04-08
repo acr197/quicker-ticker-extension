@@ -432,27 +432,46 @@
     }
   }
 
+  function fadeOut(el) {
+    el.classList.add('qt-chart-loading');
+  }
+  function fadeIn(el) {
+    // Double rAF ensures the browser has painted the opacity:0 frame
+    // before we remove the class, triggering the CSS transition to opacity:1.
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove('qt-chart-loading')));
+  }
+
   async function loadExpansionData(state, symbol, range) {
     // Chart
     const chartBox = qs(state.el, `[data-chart-for="${cssEscape(symbol)}"]`);
     if (chartBox) {
+      fadeOut(chartBox);
       const cached = await Storage.getCachedChart(symbol, range);
       if (cached && Storage.isChartFresh(cached, range)) {
         renderExpansionChart(state, chartBox, cached.points, symbol);
+        fadeIn(chartBox);
       } else {
         chartBox.textContent = 'Loading chart…';
+        fadeIn(chartBox);
       }
       try {
         const fresh = await callOffscreen('fetchChart', { symbol, range });
         if (fresh && fresh.points) {
           await Storage.setCachedChart(symbol, range, fresh);
-          // Only render if we're still expanded on the same symbol
+          // Only render if we're still expanded on the same symbol + range
           if (state.expandedSymbol === symbol && state.expandedRange === range) {
+            fadeOut(chartBox);
+            // Let the fade-out frame render before swapping content
+            await new Promise((r) => requestAnimationFrame(r));
             renderExpansionChart(state, chartBox, fresh.points, symbol);
+            fadeIn(chartBox);
           }
         }
       } catch (err) {
-        if (!cached) chartBox.textContent = 'Could not load chart.';
+        if (!cached) {
+          chartBox.textContent = 'Could not load chart.';
+          fadeIn(chartBox);
+        }
       }
     }
 
