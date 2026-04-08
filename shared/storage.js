@@ -27,8 +27,11 @@
     watchlist: [],
     priceCache: {},
     chartCache: {},
-    newsCache: {}
+    newsCache: {},
+    aiUsage: { count: 0, date: '' }
   };
+
+  const AI_DAILY_LIMIT = 20;
 
   // ---------- Cache TTLs ----------
 
@@ -143,6 +146,50 @@
     return (Date.now() - entry.fetchedAt) < TTL.NEWS_MS;
   }
 
+  // ---------- AI query usage tracking ----------
+
+  // Returns the current date in Eastern Time as YYYY-MM-DD.
+  // en-CA locale yields ISO-style YYYY-MM-DD output.
+  function todayET() {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
+  }
+
+  // Reads aiUsage and resets the count if the stored date is not today (ET).
+  async function readAiUsage() {
+    const local = await getLocal();
+    const usage = local.aiUsage || { count: 0, date: '' };
+    const today = todayET();
+    if (usage.date !== today) {
+      return { count: 0, date: today, _stale: true };
+    }
+    return { count: usage.count || 0, date: usage.date, _stale: false };
+  }
+
+  async function getQueryCount() {
+    const usage = await readAiUsage();
+    if (usage._stale) {
+      await setLocal({ aiUsage: { count: 0, date: usage.date } });
+    }
+    return usage.count;
+  }
+
+  async function incrementQueryCount() {
+    const usage = await readAiUsage();
+    const next = { count: usage.count + 1, date: usage.date };
+    await setLocal({ aiUsage: next });
+    return next.count;
+  }
+
+  async function getRemainingQueries() {
+    const count = await getQueryCount();
+    return Math.max(0, AI_DAILY_LIMIT - count);
+  }
+
   // ---------- Bulk export / import / clear ----------
 
   async function exportAll() {
@@ -191,6 +238,7 @@
   root.QTStorage = {
     PREF_DEFAULTS,
     TTL,
+    AI_DAILY_LIMIT,
     getPrefs,
     setPrefs,
     getLocal,
@@ -206,6 +254,9 @@
     getCachedNews,
     setCachedNews,
     isNewsFresh,
+    getQueryCount,
+    incrementQueryCount,
+    getRemainingQueries,
     exportAll,
     importAll,
     clearAll

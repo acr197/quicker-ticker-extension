@@ -311,6 +311,21 @@ html, body {
   color: #ff1744;
 }
 
+/* Buy me a coffee */
+.qt-opt-bmac {
+  text-align: center;
+  margin: 24px 0 8px;
+  font-size: 11px;
+}
+.qt-opt-bmac a {
+  color: #666;
+  text-decoration: none;
+}
+.qt-opt-bmac a:hover {
+  color: #888;
+  text-decoration: underline;
+}
+
 /* Footer */
 .qt-opt-footer {
   position: fixed;
