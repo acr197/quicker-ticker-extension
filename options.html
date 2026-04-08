@@ -1,200 +1,201 @@
 <!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Quicker Ticker Preferences</title>
-  <style>
-    :root{
-      --bg:#0f1116; --panel:#151822; --text:#e8eaed; --muted:#a7adb7; --line:rgba(255,255,255,.08);
-      --btn:#232838; --btn2:#1b2030;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0; padding:0;
-      background:linear-gradient(180deg,#0f1116,#0b0d12);
-      color:var(--text);
-      font:13px/1.35 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-    }
-    .wrap{padding:18px}
-    .card{
-      max-width:980px;
-      margin:0 auto;
-      background:rgba(255,255,255,.03);
-      border:1px solid var(--line);
-      border-radius:18px;
-      padding:16px 16px 12px;
-      box-shadow:0 18px 40px rgba(0,0,0,.35);
-    }
-    h1{
-      margin:0 0 12px;
-      font-size:20px;
-      font-weight:900;
-      letter-spacing:.2px;
-    }
-    label{display:block; color:var(--muted); font-size:12px; margin:8px 0 6px}
-    input[type=text], input[type=password]{
-      width:100%;
-      background:rgba(255,255,255,.04);
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:10px 12px;
-      color:var(--text);
-      outline:none;
-    }
-    input[type=text]:focus, input[type=password]:focus{border-color:rgba(255,255,255,.22)}
-    .row{display:flex; gap:12px; align-items:center}
-    .row > div{flex:1}
-    .divider{height:1px; background:var(--line); margin:14px 0}
-    .switchline{display:flex; align-items:center; gap:10px; margin:10px 0}
-    .switchline .title{font-weight:800}
-    .switchline .hint{color:var(--muted); font-size:12px}
-    .toggle{
-      width:46px; height:26px;
-      border-radius:999px;
-      background:rgba(255,255,255,.10);
-      border:1px solid var(--line);
-      position:relative;
-      cursor:pointer;
-      flex:0 0 auto;
-    }
-    .knob{
-      position:absolute; top:3px; left:3px;
-      width:20px; height:20px;
-      border-radius:999px;
-      background:#dfe4ea;
-      transition:all .16s ease;
-    }
-    .toggle.on{background:rgba(27,160,96,.35)}
-    .toggle.on .knob{left:23px; background:#e8fff3}
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Quicker Ticker — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <div class="qt-opt-shell">
+      <header class="qt-opt-header">
+        <h1>Quicker Ticker</h1>
+        <p class="qt-opt-tag">Settings &amp; preferences</p>
+      </header>
 
-    .groupsBox{margin-top:10px; display:none}
-    .groupsBox.on{display:block}
-    .groupRow{
-      display:flex; gap:10px; align-items:center; margin:8px 0;
-    }
-    .groupRow input{flex:1}
-    .mini{
-      width:32px; height:32px;
-      display:flex; align-items:center; justify-content:center;
-      padding:0;
-      border-radius:12px;
-      background:rgba(255,255,255,.04);
-      border:1px solid var(--line);
-      cursor:pointer;
-      font-size:18px;
-      line-height:1;
-      color:var(--text);
-      flex:0 0 auto;
-    }
-    .mini:hover{background:rgba(255,255,255,.07)}
-    .mini:disabled{opacity:.45; cursor:not-allowed}
+      <main class="qt-opt-main">
+        <!-- Section 1 — General -->
+        <section class="qt-opt-section">
+          <h2>General</h2>
 
-    button{
-      background:var(--btn);
-      border:1px solid var(--line);
-      color:var(--text);
-      padding:10px 14px;
-      border-radius:12px;
-      cursor:pointer;
-      font-weight:800;
-    }
-    button:hover{background:var(--btn2)}
-    .footer{
-      display:flex; justify-content:space-between; align-items:center;
-      margin-top:12px; color:var(--muted); font-size:12px;
-      gap:12px;
-    }
-    .coffee{
-      display:flex; align-items:center; gap:8px;
-      text-decoration:none;
-      color:var(--text);
-      padding:8px 10px;
-      border-radius:999px;
-      border:1px solid var(--line);
-      background:rgba(255,255,255,.03);
-      font-weight:800;
-    }
-    .coffee:hover{background:rgba(255,255,255,.06)}
-    .note{color:var(--muted); font-size:12px; margin-top:6px}
-    .link{color:var(--text); text-decoration:none; border-bottom:1px solid rgba(255,255,255,.18)}
-    .link:hover{border-bottom-color:rgba(255,255,255,.35)}
-    .note a{color:var(--text); text-decoration:none; border-bottom:1px solid rgba(255,255,255,.18)}
-    .note a:hover{border-bottom-color:rgba(255,255,255,.35)}
-    .small{font-size:12px; color:var(--muted)}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="card">
-      <h1>Quicker Ticker Preferences</h1>
+          <label class="qt-opt-toggle">
+            <input type="checkbox" id="opt-enableGrouping" />
+            <div class="qt-opt-toggle-text">
+              <div class="qt-opt-toggle-title">Enable grouping</div>
+              <div class="qt-opt-toggle-desc">Create named groups and use ▲▼ to move tickers between them.</div>
+            </div>
+          </label>
 
-      <label for="finnhub">Finnhub API token</label>
-      <input id="finnhub" type="text" placeholder="Paste your Finnhub token" />
-      <div class="note"><a class="link" href="https://finnhub.io/register" target="_blank" rel="noreferrer">Get a free Finnhub API token here</a> — it takes 30 seconds and is free for personal use.</div>
+          <label class="qt-opt-toggle">
+            <input type="checkbox" id="opt-showGroupAverages" />
+            <div class="qt-opt-toggle-text">
+              <div class="qt-opt-toggle-title">Show group performance averages</div>
+              <div class="qt-opt-toggle-desc">Show Today / 7d / 30d averages on each group header row.</div>
+            </div>
+          </label>
 
-      <div class="divider"></div>
+          <label class="qt-opt-toggle">
+            <input type="checkbox" id="opt-personalValue" />
+            <div class="qt-opt-toggle-text">
+              <div class="qt-opt-toggle-title">Personal value tracking</div>
+              <div class="qt-opt-toggle-desc">Add Shares and Value columns. Enter share counts per ticker.</div>
+            </div>
+          </label>
 
-      <div class="switchline">
-        <div class="toggle" id="tGroups"><div class="knob"></div></div>
-        <div>
-          <div class="title">Enable Grouping</div>
-          <div class="hint">Create headers and use ▲▼ arrows to move tickers between groups in the popup</div>
-        </div>
-        <div style="margin-left:auto" class="small"><span id="groupCount">0</span>/5</div>
-      </div>
+          <label class="qt-opt-toggle">
+            <input type="checkbox" id="opt-aiSummaries" />
+            <div class="qt-opt-toggle-text">
+              <div class="qt-opt-toggle-title">AI summaries</div>
+              <div class="qt-opt-toggle-desc">Click ✨ on any ticker to get an AI-powered news explanation. Only the ticker symbol and its headlines are sent — never your browsing activity or identity.</div>
+            </div>
+          </label>
 
-      <div class="groupsBox" id="groupsBox">
-        <div class="switchline" style="margin-top:0">
-          <div class="toggle" id="tAvg"><div class="knob"></div></div>
-          <div>
-            <div class="title">Group performance averaging</div>
-            <div class="hint">Show Today, 7d, 30d averages on each group row</div>
+          <label class="qt-opt-toggle">
+            <input type="checkbox" id="opt-showCrypto" />
+            <div class="qt-opt-toggle-text">
+              <div class="qt-opt-toggle-title">Show crypto</div>
+              <div class="qt-opt-toggle-desc">Enable crypto symbols (BTC-USD, ETH-USD, etc.) in search and watchlist. When off, all crypto sections are hidden.</div>
+            </div>
+          </label>
+        </section>
+
+        <!-- Section 2 — Display -->
+        <section class="qt-opt-section">
+          <h2>Display</h2>
+
+          <label class="qt-opt-toggle">
+            <input type="checkbox" id="opt-defaultViewSidepanel" />
+            <div class="qt-opt-toggle-text">
+              <div class="qt-opt-toggle-title">Open as sidebar</div>
+              <div class="qt-opt-toggle-desc">Use Chrome's side panel instead of a toolbar popup. Both are always available — this sets which opens by default.</div>
+            </div>
+          </label>
+
+          <label class="qt-opt-toggle disabled">
+            <input type="checkbox" id="opt-darkMode" checked disabled />
+            <div class="qt-opt-toggle-text">
+              <div class="qt-opt-toggle-title">Dark mode</div>
+              <div class="qt-opt-toggle-desc">Always on for now.</div>
+            </div>
+          </label>
+        </section>
+
+        <!-- Section 3 — Data sources -->
+        <section class="qt-opt-section">
+          <h2>Data Sources</h2>
+          <p class="qt-opt-help">Quicker Ticker works out of the box with no API keys required. These optional sources unlock more reliable data, higher refresh rates, and backup coverage if the default source has issues.</p>
+
+          <div class="qt-opt-source default">
+            <div class="qt-opt-source-head">
+              <div class="qt-opt-source-name">Yahoo Finance <span class="qt-opt-muted">(default, no key needed)</span></div>
+              <div class="qt-opt-status active"><span class="qt-opt-dot"></span>Active</div>
+            </div>
+            <details class="qt-opt-info">
+              <summary>What's included</summary>
+              <p>Real-time US stock prices, intraday and historical charts, company info, and news headlines. No account required. Note: Yahoo's data endpoints are unofficial and may occasionally be unavailable. Quicker Ticker uses a Stooq backup for historical data when Yahoo is unreachable.</p>
+            </details>
           </div>
+
+          <label class="qt-opt-toggle">
+            <input type="checkbox" id="opt-backupSourcesEnabled" />
+            <div class="qt-opt-toggle-text">
+              <div class="qt-opt-toggle-title">Backup &amp; extended data sources</div>
+              <div class="qt-opt-toggle-desc">Enable optional backup providers below.</div>
+            </div>
+          </label>
+
+          <div id="opt-backupCards" class="qt-opt-backup-cards" hidden>
+            <div class="qt-opt-source">
+              <div class="qt-opt-source-head">
+                <div class="qt-opt-source-name">Finnhub <span class="qt-opt-muted">— Real-time quotes + news</span></div>
+              </div>
+              <input type="text" id="opt-finnhubKey" class="qt-opt-key" placeholder="Paste your free Finnhub API key" autocomplete="off" />
+              <a class="qt-opt-link" id="opt-link-finnhub" href="#">Get a free key at finnhub.io — takes 30 seconds</a>
+              <details class="qt-opt-info">
+                <summary>What Finnhub adds</summary>
+                <p>When entered, Finnhub becomes your primary price source with true real-time data. Falls back to Yahoo if Finnhub is unavailable. Finnhub free tier: 60 API calls/minute, US stocks, forex, and crypto. Does NOT include: international stocks outside US exchanges, detailed historical charts (those still use Yahoo).</p>
+              </details>
+              <p class="qt-opt-privacy">Your API key is stored only in your browser's local storage. It is never transmitted anywhere except directly to api.finnhub.io.</p>
+            </div>
+
+            <div class="qt-opt-source">
+              <div class="qt-opt-source-head">
+                <div class="qt-opt-source-name">Alpha Vantage <span class="qt-opt-muted">— Fundamentals + earnings data</span></div>
+              </div>
+              <input type="text" id="opt-alphaVantageKey" class="qt-opt-key" placeholder="Paste your free Alpha Vantage API key" autocomplete="off" />
+              <a class="qt-opt-link" id="opt-link-av" href="#">Get a free key at alphavantage.co</a>
+              <details class="qt-opt-info">
+                <summary>What Alpha Vantage adds</summary>
+                <p>Unlocks company fundamentals (P/E ratio, EPS, revenue), earnings calendar, and sector data shown in expanded ticker view. Free tier: 25 requests/day, 5/minute — Quicker Ticker caches aggressively to stay within limits. Does NOT include: real-time prices (those stay on Yahoo/Finnhub) or news headlines.</p>
+              </details>
+              <p class="qt-opt-privacy">Your API key is stored only in your browser's local storage. It is never transmitted anywhere except directly to alphavantage.co.</p>
+            </div>
+
+            <div class="qt-opt-source" id="opt-coingecko-card" hidden>
+              <div class="qt-opt-source-head">
+                <div class="qt-opt-source-name">CoinGecko <span class="qt-opt-muted">— Crypto prices + market data</span></div>
+              </div>
+              <label class="qt-opt-toggle inline">
+                <input type="checkbox" id="opt-coinGeckoUseFreeTier" />
+                <div class="qt-opt-toggle-text">
+                  <div class="qt-opt-toggle-title">Use free tier (no key)</div>
+                  <div class="qt-opt-toggle-desc">Turn off to paste your own API key for higher rate limits.</div>
+                </div>
+              </label>
+              <input type="text" id="opt-coinGeckoKey" class="qt-opt-key" placeholder="CoinGecko API key (optional)" autocomplete="off" />
+              <details class="qt-opt-info">
+                <summary>What CoinGecko adds</summary>
+                <p>More accurate crypto prices, market cap rankings, and 24h volume for coins not listed on Yahoo Finance. The free tier (no key) works but has rate limits. A free API key from coingecko.com raises those limits significantly.</p>
+              </details>
+              <p class="qt-opt-privacy">Your API key is stored only in your browser's local storage. It is never transmitted anywhere except directly to api.coingecko.com.</p>
+            </div>
+          </div>
+
+          <button type="button" class="qt-opt-add-source" id="opt-add-source">+ Add another source</button>
+        </section>
+
+        <!-- Section 4 — Groups editor -->
+        <section class="qt-opt-section">
+          <h2>Groups</h2>
+          <div id="opt-groups-list" class="qt-opt-groups"></div>
+          <div class="qt-opt-add-group-row">
+            <input type="text" id="opt-new-group" placeholder="New group name" maxlength="60" />
+            <button type="button" id="opt-add-group">+ Add group</button>
+          </div>
+        </section>
+
+        <!-- Section 5 — Data & privacy -->
+        <section class="qt-opt-section">
+          <h2>Data &amp; privacy</h2>
+          <div class="qt-opt-actions">
+            <button type="button" id="opt-export">Export watchlist (JSON)</button>
+            <button type="button" id="opt-import">Import watchlist (JSON)</button>
+            <button type="button" id="opt-clear" class="destructive">Clear all data</button>
+          </div>
+          <input type="file" id="opt-import-file" accept="application/json" hidden />
+          <p class="qt-opt-help">Quicker Ticker stores your watchlist and preferences in your browser only. If you use AI summaries, only the ticker symbol and its headlines are sent to the AI — never your browsing history, identity, or any other personal data. No analytics. No tracking pixels. No backend server.</p>
+        </section>
+      </main>
+
+      <footer class="qt-opt-footer">
+        <div class="qt-opt-status-msg" id="opt-status"></div>
+        <button type="button" class="qt-opt-save" id="opt-save">Save</button>
+      </footer>
+    </div>
+
+    <div id="opt-modal" class="qt-opt-modal" hidden>
+      <div class="qt-opt-modal-card">
+        <h3 id="opt-modal-title">Title</h3>
+        <p id="opt-modal-body">Body</p>
+        <div class="qt-opt-modal-actions">
+          <button type="button" id="opt-modal-cancel">Cancel</button>
+          <button type="button" id="opt-modal-confirm" class="destructive">Confirm</button>
         </div>
-
-        <div id="groupList"></div>
-
-        <div class="groupRow" style="justify-content:center; margin-top:10px">
-          <button class="mini" id="addGroup" title="Add group">+</button>
-        </div>
-
-        <div class="note">Use ▲▼ arrows to reorder tickers or move them between groups. Groups can also be reordered with arrows.</div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="switchline">
-        <div class="toggle" id="tPV"><div class="knob"></div></div>
-        <div>
-          <div class="title">Personal value</div>
-          <div class="hint">Add Shares + Value columns and totals</div>
-        </div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="switchline">
-        <div class="toggle" id="tAI"><div class="knob"></div></div>
-        <div>
-          <div class="title">AI summaries</div>
-          <div class="hint">Optional: click ✨ on a row to get an explanation</div>
-        </div>
-      </div>
-
-      <div class="divider"></div>
-
-      <div class="note" id="savedMsg" style="display:none">Saved.</div>
-
-      <div class="footer">
-        <div>Uses Yahoo for current price/name and Stooq for 7d and 30d.</div>
-        <a class="coffee" href="https://buymeacoffee.com/AndrewRy" target="_blank" rel="noreferrer">
-          ☕ <span>Buy me a coffee</span>
-        </a>
       </div>
     </div>
-  </div>
 
-  <script src="options.js"></script>
-</body>
+    <script src="shared/storage.js"></script>
+    <script src="shared/tickers.js"></script>
+    <script src="options.js"></script>
+  </body>
 </html>

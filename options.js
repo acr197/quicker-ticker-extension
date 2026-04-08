@@ -1,243 +1,317 @@
-/* Quicker Ticker Preferences */
-const $ = (sel) => document.querySelector(sel);
+// options.js — Settings page logic.
+// Reads/writes prefs via QTStorage. Uses chrome.tabs.create for any
+// outbound link, never inline href navigation.
 
-const STORE_DEFAULTS = {
-  // Default token is only for faster local testing.
-  // Users can overwrite this in Preferences.
-  finnhubToken: "",
-  groupsEnabled: false,
-  groupAveraging: true,
-  groups: [
-    { id: "g1", name: "Group 1" },
-    { id: "g2", name: "Group 2" }
-  ],
-  groupTickers: { g1: [], g2: [] },
-  tickers: [],
-  sortKey: "manual",
-  sortDir: "asc",
-  columnOrder: null,
+(function () {
+  'use strict';
 
-  personalValueEnabled: false,
+  const Storage = window.QTStorage;
+  const Tickers = window.QTTickers;
 
-  aiEnabled: true,
-  aiProxyUrl: "https://quicker-ticker-ai-proxy.acr197.workers.dev/summarize",
-};
+  const els = {};
+  const ids = [
+    'opt-enableGrouping',
+    'opt-showGroupAverages',
+    'opt-personalValue',
+    'opt-aiSummaries',
+    'opt-showCrypto',
+    'opt-defaultViewSidepanel',
+    'opt-darkMode',
+    'opt-backupSourcesEnabled',
+    'opt-finnhubKey',
+    'opt-alphaVantageKey',
+    'opt-coinGeckoKey',
+    'opt-coinGeckoUseFreeTier',
+    'opt-backupCards',
+    'opt-coingecko-card',
+    'opt-add-source',
+    'opt-groups-list',
+    'opt-new-group',
+    'opt-add-group',
+    'opt-export',
+    'opt-import',
+    'opt-import-file',
+    'opt-clear',
+    'opt-save',
+    'opt-status',
+    'opt-modal',
+    'opt-modal-title',
+    'opt-modal-body',
+    'opt-modal-cancel',
+    'opt-modal-confirm',
+    'opt-link-finnhub',
+    'opt-link-av'
+  ];
 
-function uniqId() {
-  return "g" + Math.random().toString(16).slice(2, 10);
-}
+  function $(id) { return document.getElementById(id); }
 
-async function getStore() {
-  const s = await chrome.storage.local.get(null);
-  return { ...STORE_DEFAULTS, ...s };
-}
+  document.addEventListener('DOMContentLoaded', init);
 
-async function setStore(patch) {
-  await chrome.storage.local.set(patch);
-}
+  async function init() {
+    for (const id of ids) els[id] = $(id);
 
-function setToggle(el, on) {
-  el.classList.toggle("on", !!on);
-}
+    const prefs = await Storage.getPrefs();
+    paintPrefs(prefs);
+    await renderGroups();
 
-function toggleValue(el) {
-  return el.classList.contains("on");
-}
-
-function rebuildGroupList(store, onDirty) {
-  const box = $("#groupList");
-  while (box.firstChild) box.removeChild(box.firstChild);
-
-  const maxGroups = 5;
-  $("#groupCount").textContent = String(store.groups.length);
-
-  store.groups.forEach((g) => {
-    const row = document.createElement("div");
-    row.className = "groupRow";
-
-    const inp = document.createElement("input");
-    inp.type = "text";
-    inp.value = g.name || "";
-    inp.placeholder = "Group name";
-
-    inp.addEventListener("input", () => {
-      g.name = inp.value;
-      if (onDirty) onDirty();
-    });
-
-    const del = document.createElement("button");
-    del.className = "mini";
-    del.textContent = "−";
-    del.title = "Remove group";
-    del.disabled = store.groups.length <= 1;
-
-    del.addEventListener("click", () => {
-      if (store.groups.length <= 1) return;
-      const idx = store.groups.findIndex((x) => x.id === g.id);
-      if (idx >= 0) store.groups.splice(idx, 1);
-
-      // Remove tickers in that group
-      const gt = { ...store.groupTickers };
-      delete gt[g.id];
-      store.groupTickers = gt;
-
-      // Ensure any removed tickers still exist somewhere? (We just drop them.)
-      rebuildGroupList(store, onDirty);
-      if (onDirty) onDirty();
-    });
-
-    row.appendChild(inp);
-    row.appendChild(del);
-    box.appendChild(row);
-  });
-
-  $("#addGroup").disabled = store.groups.length >= maxGroups;
-}
-
-async function load() {
-  const store = await getStore();
-
-  let saveTimer = null;
-
-  function flashSaved() {
-    $("#savedMsg").style.display = "block";
-    clearTimeout(flashSaved._t);
-    flashSaved._t = setTimeout(() => { $("#savedMsg").style.display = "none"; }, 900);
+    bindHandlers();
   }
 
-  async function persistPreferences() {
-    // IMPORTANT: only write preference keys here.
-    // Writing the whole store can accidentally wipe the user's watchlist.
-    const current = await chrome.storage.local.get(null);
+  function paintPrefs(prefs) {
+    els['opt-enableGrouping'].checked = !!prefs.enableGrouping;
+    els['opt-showGroupAverages'].checked = !!prefs.showGroupAverages;
+    els['opt-personalValue'].checked = !!prefs.personalValue;
+    els['opt-aiSummaries'].checked = !!prefs.aiSummaries;
+    els['opt-showCrypto'].checked = !!prefs.showCrypto;
+    els['opt-defaultViewSidepanel'].checked = prefs.defaultView === 'sidepanel';
+    els['opt-backupSourcesEnabled'].checked = !!prefs.backupSourcesEnabled;
+    els['opt-finnhubKey'].value = prefs.finnhubKey || '';
+    els['opt-alphaVantageKey'].value = prefs.alphaVantageKey || '';
+    els['opt-coinGeckoKey'].value = prefs.coinGeckoKey || '';
+    els['opt-coinGeckoUseFreeTier'].checked = prefs.coinGeckoUseFreeTier !== false;
+    syncBackupVisibility();
+    syncCryptoVisibility();
+  }
 
-    const finnhubToken = ($("#finnhub").value || "").trim();
-    const groupsEnabled = toggleValue(tGroups);
-    const groupAveraging = toggleValue(tAvg);
-    const personalValueEnabled = toggleValue(tPV);
-    const aiEnabled = toggleValue(tAI);
+  function bindHandlers() {
+    els['opt-backupSourcesEnabled'].addEventListener('change', syncBackupVisibility);
+    els['opt-showCrypto'].addEventListener('change', syncCryptoVisibility);
+    els['opt-coinGeckoUseFreeTier'].addEventListener('change', () => {
+      els['opt-coinGeckoKey'].disabled = els['opt-coinGeckoUseFreeTier'].checked;
+    });
 
-    // Groups edited in-place via the UI (mutates `store.groups` and `store.groupTickers`)
-    const groups = store.groups;
+    // External links — open via chrome.tabs.create, never inline.
+    els['opt-link-finnhub'].addEventListener('click', (ev) => {
+      ev.preventDefault();
+      chrome.tabs.create({ url: 'https://finnhub.io/register' });
+    });
+    els['opt-link-av'].addEventListener('click', (ev) => {
+      ev.preventDefault();
+      chrome.tabs.create({ url: 'https://www.alphavantage.co/support/#api-key' });
+    });
 
-    // Preserve existing tickers within groups, even if groups were renamed/reordered.
-    // If a group was removed, move its tickers into the first remaining group.
-    const curGt = current.groupTickers || {};
-    const nextGt = { ...curGt };
-    const keepIds = new Set(groups.map((g) => g.id));
-    const removedIds = Object.keys(nextGt).filter((id) => !keepIds.has(id));
-    const fallbackId = groups && groups.length ? groups[0].id : null;
+    els['opt-add-source'].addEventListener('click', () => {
+      openModal({
+        title: 'Coming soon',
+        body: 'More data sources are on the way. Got a request? Let us know via the GitHub issues page.',
+        confirmText: 'OK',
+        destructive: false,
+        onConfirm: closeModal
+      });
+    });
 
-    const wasGrouping = !!current.groupsEnabled;
+    els['opt-add-group'].addEventListener('click', addGroup);
+    els['opt-new-group'].addEventListener('keydown', (ev) => {
+      if (ev.key === 'Enter') { ev.preventDefault(); addGroup(); }
+    });
 
-    if (fallbackId && removedIds.length) {
-      const bucket = Array.isArray(nextGt[fallbackId]) ? [...nextGt[fallbackId]] : [];
-      for (const rid of removedIds) {
-        const moved = Array.isArray(nextGt[rid]) ? nextGt[rid] : [];
-        for (const sym of moved) if (!bucket.includes(sym)) bucket.push(sym);
-        delete nextGt[rid];
+    els['opt-export'].addEventListener('click', exportData);
+    els['opt-import'].addEventListener('click', () => els['opt-import-file'].click());
+    els['opt-import-file'].addEventListener('change', importData);
+    els['opt-clear'].addEventListener('click', confirmClearAll);
+
+    els['opt-save'].addEventListener('click', save);
+
+    els['opt-modal-cancel'].addEventListener('click', closeModal);
+  }
+
+  function syncBackupVisibility() {
+    const on = els['opt-backupSourcesEnabled'].checked;
+    els['opt-backupCards'].hidden = !on;
+  }
+
+  function syncCryptoVisibility() {
+    const on = els['opt-showCrypto'].checked;
+    els['opt-coingecko-card'].hidden = !on;
+  }
+
+  // ---------- Groups ----------
+
+  async function renderGroups() {
+    const prefs = await Storage.getPrefs();
+    const list = els['opt-groups-list'];
+    list.textContent = '';
+    for (let i = 0; i < (prefs.groups || []).length; i++) {
+      const name = prefs.groups[i];
+      const row = document.createElement('div');
+      row.className = 'qt-opt-group-row';
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.value = name;
+      input.maxLength = 60;
+      input.dataset.idx = String(i);
+      input.addEventListener('change', renameGroup);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '✕';
+      del.title = 'Delete group';
+      del.addEventListener('click', () => deleteGroup(i));
+      row.appendChild(input);
+      row.appendChild(del);
+      list.appendChild(row);
+    }
+  }
+
+  async function addGroup() {
+    const input = els['opt-new-group'];
+    const name = input.value.trim();
+    if (!name) return;
+    const prefs = await Storage.getPrefs();
+    const groups = (prefs.groups || []).slice();
+    if (groups.includes(name)) {
+      flashStatus('Group already exists');
+      return;
+    }
+    groups.push(name);
+    await Storage.setPrefs({ groups });
+    input.value = '';
+    await renderGroups();
+  }
+
+  async function renameGroup(ev) {
+    const idx = Number(ev.target.dataset.idx);
+    const newName = ev.target.value.trim();
+    if (!newName) return;
+    const prefs = await Storage.getPrefs();
+    const groups = (prefs.groups || []).slice();
+    const oldName = groups[idx];
+    if (oldName === newName) return;
+    groups[idx] = newName;
+    await Storage.setPrefs({ groups });
+    // Migrate any tickers in the renamed group
+    const watchlist = await Storage.getWatchlist();
+    let dirty = false;
+    for (const t of watchlist) {
+      if (t.group === oldName) { t.group = newName; dirty = true; }
+    }
+    if (dirty) await Storage.setWatchlist(watchlist);
+  }
+
+  async function deleteGroup(idx) {
+    const prefs = await Storage.getPrefs();
+    const groups = (prefs.groups || []).slice();
+    if (groups.length <= 1) {
+      flashStatus('You must have at least one group');
+      return;
+    }
+    const removed = groups.splice(idx, 1)[0];
+    const fallback = groups[0];
+
+    openModal({
+      title: 'Delete group?',
+      body: `Tickers in "${removed}" will be moved to "${fallback}".`,
+      confirmText: 'Delete',
+      destructive: true,
+      onConfirm: async () => {
+        await Storage.setPrefs({ groups });
+        const watchlist = await Storage.getWatchlist();
+        for (const t of watchlist) {
+          if (t.group === removed) t.group = fallback;
+        }
+        await Storage.setWatchlist(watchlist);
+        await renderGroups();
+        closeModal();
       }
-      nextGt[fallbackId] = bucket;
-    } else {
-      for (const rid of removedIds) delete nextGt[rid];
+    });
+  }
+
+  // ---------- Export / import / clear ----------
+
+  async function exportData() {
+    try {
+      const payload = await Storage.exportAll();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `quicker-ticker-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      flashStatus('Exported');
+    } catch (err) {
+      flashStatus('Export failed: ' + (err && err.message), true);
     }
+  }
 
-    // Ensure every group has an array
-    for (const g of groups) {
-      if (!Array.isArray(nextGt[g.id])) nextGt[g.id] = [];
+  async function importData(ev) {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const payload = JSON.parse(text);
+      await Storage.importAll(payload);
+      flashStatus('Imported');
+      const prefs = await Storage.getPrefs();
+      paintPrefs(prefs);
+      await renderGroups();
+    } catch (err) {
+      flashStatus('Import failed: ' + (err && err.message), true);
+    } finally {
+      ev.target.value = '';
     }
+  }
 
-    // Watchlist migration so toggling Groups never "empties" the main view:
-    // - Turning grouping ON: move existing ungrouped tickers into the first group
-    // - Turning grouping OFF: flatten grouped tickers back into the ungrouped list
-    let migratedTickers = null;
-
-    if (!wasGrouping && groupsEnabled && fallbackId) {
-      const ungrouped = Array.isArray(current.tickers) ? current.tickers : [];
-      if (ungrouped.length) {
-        const bucket = Array.isArray(nextGt[fallbackId]) ? [...nextGt[fallbackId]] : [];
-        for (const sym of ungrouped) if (!bucket.includes(sym)) bucket.push(sym);
-        nextGt[fallbackId] = bucket;
-        migratedTickers = [];
+  function confirmClearAll() {
+    openModal({
+      title: 'Clear all data?',
+      body: 'This permanently deletes your watchlist, settings, and all cached prices. This cannot be undone.',
+      confirmText: 'Delete everything',
+      destructive: true,
+      onConfirm: async () => {
+        await Storage.clearAll();
+        const prefs = await Storage.getPrefs();
+        paintPrefs(prefs);
+        await renderGroups();
+        closeModal();
+        flashStatus('Cleared');
       }
-    }
+    });
+  }
 
-    if (wasGrouping && !groupsEnabled) {
-      const flat = [];
-      for (const g of groups) {
-        const arr = Array.isArray(nextGt[g.id]) ? nextGt[g.id] : [];
-        for (const sym of arr) if (!flat.includes(sym)) flat.push(sym);
-      }
-      migratedTickers = flat;
-    }
+  // ---------- Save ----------
 
-    const patch = {
-      finnhubToken,
-      groupsEnabled,
-      groupAveraging,
-      personalValueEnabled,
-      aiEnabled,
-      groups,
-      groupTickers: nextGt,
+  async function save() {
+    const prefs = {
+      enableGrouping: els['opt-enableGrouping'].checked,
+      showGroupAverages: els['opt-showGroupAverages'].checked,
+      personalValue: els['opt-personalValue'].checked,
+      aiSummaries: els['opt-aiSummaries'].checked,
+      showCrypto: els['opt-showCrypto'].checked,
+      defaultView: els['opt-defaultViewSidepanel'].checked ? 'sidepanel' : 'popup',
+      backupSourcesEnabled: els['opt-backupSourcesEnabled'].checked,
+      finnhubKey: els['opt-finnhubKey'].value.trim().slice(0, 200),
+      alphaVantageKey: els['opt-alphaVantageKey'].value.trim().slice(0, 200),
+      coinGeckoKey: els['opt-coinGeckoKey'].value.trim().slice(0, 200),
+      coinGeckoUseFreeTier: els['opt-coinGeckoUseFreeTier'].checked
     };
-
-    if (migratedTickers !== null) patch.tickers = migratedTickers;
-
-    await setStore(patch);
-    flashSaved();
+    await Storage.setPrefs(prefs);
+    flashStatus('Saved');
   }
 
-  function scheduleSave() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
-      persistPreferences().catch(() => {});
-    }, 250);
+  function flashStatus(text, isError) {
+    const s = els['opt-status'];
+    s.textContent = text;
+    s.style.color = isError ? '#ff1744' : '#00c853';
+    setTimeout(() => { s.textContent = ''; }, 2000);
   }
 
-  $("#finnhub").value = store.finnhubToken || "";
+  // ---------- Modal ----------
 
-  // Toggles
-  const tGroups = $("#tGroups");
-  const tAvg = $("#tAvg");
-  const tPV = $("#tPV");
-  const tAI = $("#tAI");
-
-  setToggle(tGroups, store.groupsEnabled);
-  setToggle(tAvg, store.groupAveraging);
-  setToggle(tPV, store.personalValueEnabled);
-  setToggle(tAI, store.aiEnabled);
-
-  $("#groupsBox").classList.toggle("on", !!store.groupsEnabled);
-  rebuildGroupList(store, scheduleSave);
-
-  // Toggle listeners
-  tGroups.addEventListener("click", () => {
-    setToggle(tGroups, !toggleValue(tGroups));
-    $("#groupsBox").classList.toggle("on", toggleValue(tGroups));
-    scheduleSave();
-  });
-
-  tAvg.addEventListener("click", () => { setToggle(tAvg, !toggleValue(tAvg)); scheduleSave(); });
-  tPV.addEventListener("click", () => { setToggle(tPV, !toggleValue(tPV)); scheduleSave(); });
-
-  tAI.addEventListener("click", () => {
-    setToggle(tAI, !toggleValue(tAI));
-    scheduleSave();
-  });
-
-  $("#finnhub").addEventListener("input", scheduleSave);
-
-  $("#addGroup").addEventListener("click", () => {
-    if (store.groups.length >= 5) return;
-    const id = uniqId();
-    store.groups.push({ id, name: `Group ${store.groups.length + 1}` });
-
-    const gt = { ...store.groupTickers };
-    gt[id] = [];
-    store.groupTickers = gt;
-
-    rebuildGroupList(store, scheduleSave);
-    scheduleSave();
-  });
-}
-
-document.addEventListener("DOMContentLoaded", load);
+  let modalOnConfirm = null;
+  function openModal(opts) {
+    els['opt-modal-title'].textContent = opts.title || '';
+    els['opt-modal-body'].textContent = opts.body || '';
+    els['opt-modal-confirm'].textContent = opts.confirmText || 'OK';
+    els['opt-modal-confirm'].classList.toggle('destructive', !!opts.destructive);
+    modalOnConfirm = opts.onConfirm || closeModal;
+    els['opt-modal'].hidden = false;
+    // Re-bind once to avoid stacking listeners
+    els['opt-modal-confirm'].onclick = () => { if (modalOnConfirm) modalOnConfirm(); };
+  }
+  function closeModal() {
+    els['opt-modal'].hidden = true;
+    modalOnConfirm = null;
+  }
+})();
