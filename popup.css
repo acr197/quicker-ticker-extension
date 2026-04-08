@@ -1,0 +1,22 @@
+/* popup.css — Size overrides for the toolbar popup.
+   Loaded after sidepanel.css so it overrides only the layout sizing. */
+
+body.qt-popup {
+  width: 360px;
+  min-width: 360px;
+  max-height: 600px;
+  overflow: hidden;
+}
+
+body.qt-popup .qt-shell {
+  max-height: 600px;
+  min-height: 480px;
+}
+
+body.qt-popup .qt-main {
+  max-height: 380px;
+}
+
+body.qt-popup .qt-bonuses-panel {
+  max-height: 240px;
+}

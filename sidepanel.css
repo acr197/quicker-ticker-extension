@@ -1,0 +1,574 @@
+/* sidepanel.css — Sizing + shared visual rules.
+   The popup.css file overrides only the size constraints. */
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #0d0d0d;
+  color: #e5e5e5;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+body.qt-sidepanel {
+  min-width: 280px;
+}
+
+.qt-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  animation: qt-fade-in 0.18s ease-out;
+}
+
+@keyframes qt-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Header ---------- */
+
+.qt-header {
+  padding: 16px 14px 8px;
+  position: sticky;
+  top: 0;
+  background: #0d0d0d;
+  z-index: 5;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.qt-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.qt-title {
+  font-size: 22px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qt-mark {
+  color: #00c853;
+  font-size: 16px;
+}
+
+.qt-header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.qt-icon-btn {
+  background: transparent;
+  border: 0;
+  color: #888;
+  cursor: pointer;
+  font-size: 16px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.qt-icon-btn:hover {
+  background: #1a1a1a;
+  color: #e5e5e5;
+}
+.qt-icon-btn.spinning {
+  animation: qt-spin 0.6s linear;
+}
+@keyframes qt-spin {
+  from { transform: rotate(0); }
+  to   { transform: rotate(360deg); }
+}
+
+.qt-date {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 10px;
+}
+
+/* ---------- Search ---------- */
+
+.qt-search-wrap {
+  position: relative;
+}
+.qt-search {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #e5e5e5;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.qt-search::placeholder { color: #666; }
+.qt-search:focus {
+  outline: none;
+  border-color: #00c853;
+}
+
+.qt-search-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 10;
+  display: none;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+}
+.qt-search-dropdown.open { display: block; }
+
+.qt-search-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #232323;
+}
+.qt-search-item:last-child { border-bottom: 0; }
+.qt-search-item:hover { background: #232323; }
+.qt-search-sym { font-weight: 700; font-size: 13px; }
+.qt-search-name { font-size: 11px; color: #888; margin-top: 1px; }
+
+/* ---------- Main / list ---------- */
+
+.qt-main {
+  flex: 1;
+  padding: 8px 14px 12px;
+  overflow-y: auto;
+}
+
+.qt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.qt-empty {
+  color: #666;
+  font-size: 12px;
+  text-align: center;
+  padding: 24px 12px;
+}
+
+/* ---------- Group header ---------- */
+
+.qt-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 4px 4px;
+  margin-top: 6px;
+}
+.qt-group:first-child { margin-top: 0; }
+.qt-group-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ---------- Ticker rows ---------- */
+
+.qt-row {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.qt-row:hover {
+  background: #1f1f1f;
+  border-color: #333;
+}
+.qt-row.expanded {
+  border-color: #00c853;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.qt-arrows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.qt-arrow {
+  background: transparent;
+  border: 0;
+  color: #555;
+  font-size: 9px;
+  cursor: pointer;
+  width: 18px;
+  height: 14px;
+  padding: 0;
+  border-radius: 3px;
+}
+.qt-arrow:hover:not(:disabled) {
+  background: #2a2a2a;
+  color: #e5e5e5;
+}
+.qt-arrow:disabled { opacity: 0.3; cursor: default; }
+
+.qt-row-left {
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100px;
+}
+.qt-sym {
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+.qt-name {
+  font-size: 11px;
+  color: #888;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qt-spark-cell {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-width: 0;
+}
+.qt-spark { display: block; }
+
+.qt-row-right {
+  flex: 0 0 auto;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.qt-price {
+  font-weight: 600;
+  font-size: 13px;
+}
+.qt-price.stale { color: #666; }
+
+.qt-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.qt-pill.pos {
+  background: rgba(0,200,83,0.18);
+  color: #00e676;
+}
+.qt-pill.neg {
+  background: rgba(255,23,68,0.2);
+  color: #ff5577;
+}
+
+.qt-shares-wrap { margin-top: 4px; }
+.qt-shares {
+  width: 50px;
+  background: #0d0d0d;
+  border: 1px solid #2a2a2a;
+  color: #e5e5e5;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  text-align: right;
+}
+.qt-shares:focus { outline: none; border-color: #00c853; }
+
+/* ---------- Expansion ---------- */
+
+.qt-expansion {
+  background: #161616;
+  border: 1px solid #00c853;
+  border-top: 0;
+  border-bottom-left-radius: 10px;
+  border-bottom-right-radius: 10px;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -6px;
+}
+
+.qt-chart-box {
+  width: 100%;
+  min-height: 160px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #666;
+  font-size: 11px;
+  position: relative;
+}
+.qt-chart-wrap {
+  width: 100%;
+  position: relative;
+}
+.qt-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.qt-chart-empty {
+  color: #666;
+  font-size: 11px;
+}
+.qt-chart-tooltip {
+  position: absolute;
+  background: #0d0d0d;
+  border: 1px solid #2a2a2a;
+  color: #e5e5e5;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  pointer-events: none;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.qt-ranges {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+.qt-range {
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #888;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.qt-range:hover { background: #232323; color: #e5e5e5; }
+.qt-range.active {
+  background: #0d0d0d;
+  border-color: #00c853;
+  color: #00e676;
+}
+
+.qt-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  font-size: 11px;
+  padding: 4px 0;
+}
+.qt-stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+}
+.qt-stat-label { color: #888; }
+.qt-stat-value { color: #e5e5e5; font-weight: 600; }
+.qt-stat-value.pos { color: #00e676; }
+.qt-stat-value.neg { color: #ff5577; }
+
+.qt-news-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f0f0f0;
+  margin-top: 4px;
+}
+.qt-news {
+  font-size: 11px;
+  color: #888;
+}
+.qt-news-list {
+  list-style: disc;
+  padding-left: 18px;
+  margin: 4px 0;
+}
+.qt-news-list li {
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+.qt-news-list a {
+  color: #b4b4b4;
+  text-decoration: none;
+}
+.qt-news-list a:hover {
+  color: #4fc3f7;
+  text-decoration: underline;
+}
+
+.qt-remove {
+  align-self: center;
+  background: transparent;
+  border: 0;
+  color: #ff5577;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 16px;
+  margin-top: 4px;
+}
+.qt-remove:hover { color: #ff1744; }
+
+/* ---------- Footer ---------- */
+
+.qt-footer {
+  border-top: 1px solid #1a1a1a;
+  padding: 10px 14px 12px;
+  background: #0d0d0d;
+}
+
+.qt-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+.qt-total-label {
+  color: #888;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.qt-total-value { font-weight: 700; }
+
+.qt-bonuses-toggle {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  color: #e5e5e5;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.qt-bonuses-toggle:hover {
+  background: #232323;
+  border-color: #4fc3f7;
+}
+
+.qt-bonuses-panel {
+  display: none;
+  margin-top: 8px;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.qt-bonuses-panel.open { display: block; }
+
+.qt-disclosure {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.4;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #232323;
+}
+
+.qt-offer-section {
+  margin-bottom: 12px;
+}
+.qt-offer-section:last-child { margin-bottom: 0; }
+.qt-offer-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 6px;
+}
+
+.qt-offer-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #1a1a1a;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 6px;
+}
+
+.qt-offer-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+}
+
+.qt-offer-body {
+  flex: 1;
+  min-width: 0;
+}
+.qt-offer-name {
+  font-size: 12px;
+  font-weight: 700;
+}
+.qt-offer-blurb {
+  font-size: 11px;
+  color: #b4b4b4;
+  margin-top: 1px;
+  line-height: 1.3;
+}
+.qt-offer-terms {
+  font-size: 10px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.qt-offer-btn {
+  background: #0d0d0d;
+  border: 1px solid #2a2a2a;
+  color: #4fc3f7;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.qt-offer-btn:hover {
+  background: #1a1a1a;
+  border-color: #4fc3f7;
+}
+
+.qt-version-row {
+  text-align: right;
+  margin-top: 8px;
+}
+.qt-version {
+  font-size: 10px;
+  color: #555;
+}

@@ -1,4 +1,4 @@
-// popup.js — Thin entrypoint. Reuses shared/ui.js logic.
+// sidepanel.js — Thin entrypoint. All logic lives in shared/ui.js.
 
 (function () {
   'use strict';
