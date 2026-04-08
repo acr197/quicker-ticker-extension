@@ -298,7 +298,13 @@ body.qt-sidepanel {
 
 /* ---------- Expansion ---------- */
 
+@keyframes qt-expand-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .qt-expansion {
+  animation: qt-expand-in 0.18s ease-out;
   background: #161616;
   border: 1px solid #00c853;
   border-top: 0;
@@ -320,6 +326,10 @@ body.qt-sidepanel {
   color: #666;
   font-size: 11px;
   position: relative;
+  transition: opacity 0.15s ease;
+}
+.qt-chart-box.qt-chart-loading {
+  opacity: 0;
 }
 .qt-chart-wrap {
   width: 100%;
