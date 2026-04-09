@@ -26,7 +26,8 @@
       quotes: {},
       expandedSymbol: null,
       expandedRange: '1D',
-      searchTimer: null
+      searchTimer: null,
+      dragFrom: null
     };
   }
 
@@ -171,6 +172,46 @@
     }
 
     renderTotalRow(state);
+    // Asynchronously replace synthetic sparklines with real intraday data.
+    loadSparklines(state);
+  }
+
+  // ---------- Sparkline data loading ----------
+
+  // Fetches real 1-D chart data for every visible symbol and updates the
+  // sparkline SVGs in place without triggering a full list re-render.
+  // Crypto automatically gets a rolling 24 h window (handled by offscreen.js).
+  function loadSparklines(state) {
+    const symbols = state.watchlist.map((t) => t.symbol);
+    for (const sym of symbols) {
+      loadSymbolSparkline(state, sym);
+    }
+  }
+
+  async function loadSymbolSparkline(state, symbol) {
+    try {
+      const cached = await Storage.getCachedChart(symbol, '1D');
+      if (cached && Storage.isChartFresh(cached, '1D') && cached.points && cached.points.length >= 2) {
+        updateSparkline(state, symbol, cached.points);
+        return;
+      }
+      const fresh = await callOffscreen('fetchChart', { symbol, range: '1D' });
+      if (fresh && fresh.points && fresh.points.length >= 2) {
+        await Storage.setCachedChart(symbol, '1D', fresh);
+        updateSparkline(state, symbol, fresh.points);
+      }
+    } catch {
+      // Keep the synthetic sparkline on error.
+    }
+  }
+
+  function updateSparkline(state, symbol, points) {
+    const cell = state.el.querySelector(`[data-spark-for="${cssEscape(symbol)}"]`);
+    if (!cell) return;
+    cell.textContent = '';
+    const q = state.quotes[symbol];
+    const positive = q && typeof q.changePct === 'number' ? q.changePct >= 0 : true;
+    cell.appendChild(Chart.sparkline(points, { positive }));
   }
 
   function renderGroupHeader(state, group) {
@@ -210,23 +251,66 @@
     row.setAttribute('data-symbol', ticker.symbol);
     row.setAttribute('role', 'button');
     row.tabIndex = 0;
+    row.draggable = true;
 
-    // Up/down arrows column (only when grouping enabled and group has 2+)
-    if (state.prefs && state.prefs.enableGrouping && group.tickers.length > 1) {
-      const arrows = document.createElement('div');
-      arrows.className = 'qt-arrows';
-      const up = makeArrowBtn('▲', indexInGroup === 0, async (ev) => {
-        ev.stopPropagation();
-        await Tickers.move(ticker.symbol, 'up');
-      });
-      const down = makeArrowBtn('▼', indexInGroup === group.tickers.length - 1, async (ev) => {
-        ev.stopPropagation();
-        await Tickers.move(ticker.symbol, 'down');
-      });
-      arrows.appendChild(up);
-      arrows.appendChild(down);
-      row.appendChild(arrows);
-    }
+    // Drag handle
+    const handle = makeDragHandle();
+    handle.addEventListener('click', (ev) => ev.stopPropagation());
+    row.appendChild(handle);
+
+    // Drag-and-drop events
+    row.addEventListener('dragstart', (ev) => {
+      state.dragFrom = ticker.symbol;
+      ev.dataTransfer.effectAllowed = 'move';
+      ev.dataTransfer.setData('text/plain', ticker.symbol);
+      // Delay so the browser snapshot is taken before we dim the row
+      setTimeout(() => row.classList.add('qt-dragging'), 0);
+    });
+
+    row.addEventListener('dragend', () => {
+      state.dragFrom = null;
+      row.classList.remove('qt-dragging');
+      qs(state.el, '#qt-list').querySelectorAll('.qt-drag-over')
+        .forEach((el) => el.classList.remove('qt-drag-over'));
+    });
+
+    row.addEventListener('dragover', (ev) => {
+      if (!state.dragFrom || state.dragFrom === ticker.symbol) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      qs(state.el, '#qt-list').querySelectorAll('.qt-drag-over')
+        .forEach((el) => el.classList.remove('qt-drag-over'));
+      row.classList.add('qt-drag-over');
+    });
+
+    row.addEventListener('dragleave', (ev) => {
+      if (!row.contains(ev.relatedTarget)) {
+        row.classList.remove('qt-drag-over');
+      }
+    });
+
+    row.addEventListener('drop', async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      row.classList.remove('qt-drag-over');
+      const fromSymbol = state.dragFrom;
+      state.dragFrom = null;
+      if (!fromSymbol || fromSymbol === ticker.symbol) return;
+      const fromTicker = state.watchlist.find((t) => t.symbol === fromSymbol);
+      if (!fromTicker || fromTicker.group !== ticker.group) return;
+      // Optimistic update for immediate responsiveness
+      const newList = state.watchlist.slice();
+      const fromIdx = newList.findIndex((t) => t.symbol === fromSymbol);
+      if (fromIdx === -1) return;
+      const [item] = newList.splice(fromIdx, 1);
+      const insertIdx = newList.findIndex((t) => t.symbol === ticker.symbol);
+      if (insertIdx === -1) return;
+      newList.splice(insertIdx, 0, item);
+      state.watchlist = newList;
+      renderWatchlist(state);
+      // Persist (storage listener will trigger a second render — that's fine)
+      await Tickers.reorderInGroup(fromSymbol, ticker.symbol);
+    });
 
     // Symbol + name
     const left = document.createElement('div');
@@ -241,9 +325,11 @@
     left.appendChild(nm);
     row.appendChild(left);
 
-    // Sparkline
+    // Sparkline — seeded with a synthetic 2-point line immediately;
+    // loadSparklines() will replace this with real intraday data.
     const spark = document.createElement('div');
     spark.className = 'qt-spark-cell';
+    spark.setAttribute('data-spark-for', ticker.symbol);
     const q = state.quotes[ticker.symbol];
     const sparkPoints = synthesizeSparkPoints(q);
     if (sparkPoints) {
@@ -304,14 +390,16 @@
     return row;
   }
 
-  function makeArrowBtn(label, disabled, onClick) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'qt-arrow';
-    btn.textContent = label;
-    if (disabled) btn.disabled = true;
-    btn.addEventListener('click', onClick);
-    return btn;
+  function makeDragHandle() {
+    const div = document.createElement('div');
+    div.className = 'qt-drag-handle';
+    // 2 × 3 dot grid — universally recognised drag affordance
+    div.innerHTML = '<svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">'
+      + '<circle cx="3" cy="2.5" r="1.2"/><circle cx="7" cy="2.5" r="1.2"/>'
+      + '<circle cx="3" cy="7"   r="1.2"/><circle cx="7" cy="7"   r="1.2"/>'
+      + '<circle cx="3" cy="11.5" r="1.2"/><circle cx="7" cy="11.5" r="1.2"/>'
+      + '</svg>';
+    return div;
   }
 
   function synthesizeSparkPoints(q) {
@@ -390,6 +478,20 @@
     news.textContent = 'Loading…';
     wrap.appendChild(news);
 
+    // Footer: AI placeholder (left) + Remove (right)
+    const footer = document.createElement('div');
+    footer.className = 'qt-expansion-footer';
+
+    const aiBtn = document.createElement('button');
+    aiBtn.type = 'button';
+    aiBtn.className = 'qt-ai-btn';
+    aiBtn.title = 'AI Insights (coming soon)';
+    aiBtn.setAttribute('aria-label', 'AI Insights (coming soon)');
+    aiBtn.disabled = true;
+    // Star icon
+    aiBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+    footer.appendChild(aiBtn);
+
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'qt-remove';
@@ -399,7 +501,9 @@
       state.expandedSymbol = null;
       await Tickers.remove(ticker.symbol);
     });
-    wrap.appendChild(removeBtn);
+    footer.appendChild(removeBtn);
+
+    wrap.appendChild(footer);
 
     return wrap;
   }

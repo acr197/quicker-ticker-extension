@@ -114,6 +114,25 @@
     return list;
   }
 
+  // Reorder by inserting fromSymbol before toSymbol (drag-and-drop).
+  // Only moves within the same group.
+  async function reorderInGroup(fromSymbol, toSymbol) {
+    const fromSym = normalizeSymbol(fromSymbol);
+    const toSym   = normalizeSymbol(toSymbol);
+    if (fromSym === toSym) return root.QTStorage.getWatchlist();
+    const list = await root.QTStorage.getWatchlist();
+    const fromIdx = findIndex(list, fromSym);
+    const toIdx   = findIndex(list, toSym);
+    if (fromIdx === -1 || toIdx === -1) return list;
+    if (list[fromIdx].group !== list[toIdx].group) return list;
+    const [item] = list.splice(fromIdx, 1);
+    const newToIdx = list.findIndex((t) => t.symbol === toSym);
+    list.splice(newToIdx, 0, item);
+    reindex(list);
+    await root.QTStorage.setWatchlist(list);
+    return list;
+  }
+
   function reindex(list) {
     for (let i = 0; i < list.length; i++) list[i].order = i;
     return list;
@@ -148,6 +167,7 @@
     setShares,
     setGroup,
     move,
+    reorderInGroup,
     groupBy
   };
 })(typeof window !== 'undefined' ? window : globalThis);

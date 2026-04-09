@@ -203,27 +203,24 @@ body.qt-sidepanel {
   border-bottom-right-radius: 0;
 }
 
-.qt-arrows {
+.qt-drag-handle {
+  flex: 0 0 auto;
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  align-items: center;
+  color: #333;
+  cursor: grab;
+  padding: 2px 2px;
+  transition: color 0.15s;
+  user-select: none;
 }
-.qt-arrow {
-  background: transparent;
-  border: 0;
-  color: #555;
-  font-size: 9px;
-  cursor: pointer;
-  width: 18px;
-  height: 14px;
-  padding: 0;
-  border-radius: 3px;
+.qt-row:hover .qt-drag-handle { color: #666; }
+.qt-drag-handle:active { cursor: grabbing; }
+
+.qt-row.qt-dragging { opacity: 0.4; }
+.qt-row.qt-drag-over {
+  border-color: #00c853;
+  background: #0f2a18;
 }
-.qt-arrow:hover:not(:disabled) {
-  background: #2a2a2a;
-  color: #e5e5e5;
-}
-.qt-arrow:disabled { opacity: 0.3; cursor: default; }
 
 .qt-row-left {
   flex: 0 0 auto;
@@ -429,8 +426,26 @@ body.qt-sidepanel {
   margin-right: 2px;
 }
 
+.qt-expansion-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.qt-ai-btn {
+  background: transparent;
+  border: 0;
+  color: #444;
+  padding: 6px 8px;
+  cursor: default;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
 .qt-remove {
-  align-self: center;
   background: transparent;
   border: 0;
   color: #ff5577;
@@ -438,7 +453,6 @@ body.qt-sidepanel {
   font-weight: 600;
   cursor: pointer;
   padding: 8px 16px;
-  margin-top: 4px;
 }
 .qt-remove:hover { color: #ff1744; }
 
