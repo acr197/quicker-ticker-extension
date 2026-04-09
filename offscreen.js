@@ -248,12 +248,17 @@ async function fetchNews(symbol, name) {
     if (res.ok) {
       const json = await res.json();
       const news = (json && json.news) || [];
-      const raw = news.map((n) => ({
-        title: String(n.title || '').slice(0, 200),
-        link: typeof n.link === 'string' && n.link.startsWith('https://') ? n.link : '',
-        publisher: String(n.publisher || '').slice(0, 60),
-        providerPublishTime: typeof n.providerPublishTime === 'number' ? n.providerPublishTime * 1000 : 0
-      })).filter((h) => h.title && h.link);
+      const raw = news.map((n) => {
+        const link = typeof n.link === 'string' && n.link.startsWith('https://') ? n.link : '';
+        let publisher = String(n.publisher || '').slice(0, 60);
+        if (!publisher && link) publisher = sourceFromUrl(link);
+        return {
+          title: String(n.title || '').slice(0, 200),
+          link,
+          publisher,
+          providerPublishTime: typeof n.providerPublishTime === 'number' ? n.providerPublishTime * 1000 : 0
+        };
+      }).filter((h) => h.title && h.link);
       const filtered = filterHeadlinesByRelevance(raw, symbol, name).slice(0, 5);
       if (filtered.length > 0) {
         return { symbol, headlines: filtered, fetchedAt: Date.now(), source: 'yahoo-json' };
@@ -356,23 +361,47 @@ function parseRss(xmlText) {
   const titleRe = /<title>([\s\S]*?)<\/title>/;
   const linkRe  = /<link>([\s\S]*?)<\/link>/;
   const pubRe   = /<pubDate>([\s\S]*?)<\/pubDate>/;
+  const srcRe   = /<source[^>]*>([\s\S]*?)<\/source>/;
   const items = xmlText.match(itemRe) || [];
   for (const item of items) {
     const t = item.match(titleRe);
     const l = item.match(linkRe);
     const p = item.match(pubRe);
+    const s = item.match(srcRe);
     let title = t ? decodeXml(t[1]).trim() : '';
     let link  = l ? decodeXml(l[1]).trim() : '';
+    let source = s ? decodeXml(s[1]).trim() : '';
     if (!title || !link) continue;
     if (!link.startsWith('https://')) continue;
+    if (!source) source = sourceFromUrl(link);
     out.push({
       title: title.slice(0, 200),
       link,
-      publisher: '',
+      publisher: source.slice(0, 60),
       providerPublishTime: p ? Date.parse(p[1]) || 0 : 0
     });
   }
   return out;
+}
+
+// Derive a short human-readable source name from a URL.
+// "https://finance.yahoo.com/…" -> "Yahoo"
+// "https://www.bloomberg.com/…" -> "Bloomberg"
+// "https://www.reuters.com/…"   -> "Reuters"
+function sourceFromUrl(url) {
+  try {
+    const u = new URL(url);
+    let host = u.hostname.replace(/^www\./, '');
+    const parts = host.split('.');
+    // Strip common subdomain prefixes so "finance.yahoo.com" -> "yahoo"
+    const SKIP = new Set(['finance','news','money','business','investor','markets','marketwatch']);
+    let name = parts[0];
+    if (parts.length >= 2 && SKIP.has(parts[0])) name = parts[1];
+    // Title case
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  } catch {
+    return '';
+  }
 }
 
 function decodeXml(s) {
@@ -384,6 +413,66 @@ function decodeXml(s) {
     .replace(/&#39;/g, "'")
     .replace(/&apos;/g, "'")
     .replace(/&amp;/g, '&');
+}
+
+// ---------- AI insights (via Cloudflare Worker -> OpenAI) ----------
+
+const AI_PROXY_URL = 'https://quicker-ticker-ai-proxy.acr197.workers.dev/';
+
+async function fetchAiInsights(symbol, name) {
+  const sym = String(symbol || '').toUpperCase();
+  const assetName = String(name || '').trim();
+  const label = assetName ? `${assetName} (${sym})` : sym;
+
+  const systemMsg = [
+    'You are a concise financial analyst assistant for a retail investor.',
+    'Give objective, factual context only. Do NOT give personalized investment recommendations.',
+    'Respond ONLY in the exact template provided. No intro, no outro, no extra prose.'
+  ].join(' ');
+
+  const userMsg = [
+    `Provide a deeper-dive analysis for ${label} that goes beyond what's on Yahoo Finance.`,
+    'Use the following EXACT template (preserve headings in all caps followed by a colon):',
+    '',
+    'PAST PERFORMANCE:',
+    '2-3 sentences summarizing recent share-price performance, notable highs/lows, and the trend over the last 6-12 months.',
+    '',
+    'FUTURE OUTLOOK:',
+    '3-4 sentences covering upcoming earnings call expectations, analyst estimates, potential devaluations or catalysts, sector tailwinds/headwinds, and any forward-looking factors a retail investor would not easily find on Yahoo Finance.',
+    '',
+    'ADVICE:',
+    '- ONE short bullet point of general-education consideration (not a buy/sell recommendation).'
+  ].join('\n');
+
+  const body = {
+    model: 'gpt-4o-mini',
+    temperature: 0.4,
+    messages: [
+      { role: 'system', content: systemMsg },
+      { role: 'user',   content: userMsg }
+    ]
+  };
+
+  const res = await fetch(AI_PROXY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    throw new Error(`AI service returned ${res.status}`);
+  }
+  const json = await res.json();
+  // Tolerate several possible response shapes from the worker.
+  const text =
+    (json && json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content) ||
+    (json && json.text) ||
+    (json && json.content) ||
+    (json && json.output_text) ||
+    '';
+  if (!text || typeof text !== 'string') {
+    throw new Error('empty AI response');
+  }
+  return { symbol: sym, name: assetName, text: text.trim(), fetchedAt: Date.now() };
 }
 
 // ---------- Symbol search ----------
@@ -437,6 +526,8 @@ async function handleMessage(msg) {
       return await fetchChart(msg.symbol, msg.range || '1D');
     case 'fetchNews':
       return await fetchNews(msg.symbol, msg.name);
+    case 'fetchAiInsights':
+      return await fetchAiInsights(msg.symbol, msg.name);
     case 'searchSymbols':
       return await searchSymbols(msg.query || '');
     case 'refreshCrumb':

@@ -35,7 +35,8 @@
   "host_permissions": [
     "https://*.finance.yahoo.com/*",
     "https://feeds.finance.yahoo.com/*",
-    "https://stooq.com/*"
+    "https://stooq.com/*",
+    "https://quicker-ticker-ai-proxy.acr197.workers.dev/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
