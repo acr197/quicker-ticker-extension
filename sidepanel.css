@@ -423,6 +423,11 @@ body.qt-sidepanel {
   color: #4fc3f7;
   text-decoration: underline;
 }
+.qt-news-date {
+  color: #666;
+  font-variant-numeric: tabular-nums;
+  margin-right: 2px;
+}
 
 .qt-remove {
   align-self: center;

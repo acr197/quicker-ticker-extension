@@ -6,6 +6,25 @@
 
   const SYMBOL_RE = /^[A-Z0-9._\-^=]{1,16}$/;
 
+  // Known crypto base symbols. Used to detect crypto tickers so the
+  // UI can show a rolling 24h window instead of a calendar-day window.
+  const CRYPTO_BASES = new Set([
+    'BTC','ETH','SOL','DOGE','ADA','XRP','BNB','DOT','LTC','AVAX',
+    'LINK','MATIC','TRX','SHIB','ATOM','UNI','ICP','ETC','FIL','APE',
+    'NEAR','ALGO','XLM','HBAR','EOS','AAVE','MKR','CRV','LDO','ARB',
+    'OP','SUI','APT','TON','PEPE','BCH','XMR','USDT','USDC','DAI',
+    'FTM','XTZ','SAND','MANA','AXS','FLOW','CHZ','GRT','QNT','VET',
+    'INJ','RNDR','IMX','STX','TIA','SEI','JUP','WIF','BONK','FET'
+  ]);
+
+  function isCryptoSymbol(symbol) {
+    if (!symbol) return false;
+    const s = String(symbol).toUpperCase();
+    const dashIdx = s.indexOf('-');
+    const base = dashIdx >= 0 ? s.slice(0, dashIdx) : s;
+    return CRYPTO_BASES.has(base);
+  }
+
   function normalizeSymbol(raw) {
     if (typeof raw !== 'string') return '';
     return raw.trim().toUpperCase();
@@ -119,6 +138,8 @@
 
   root.QTTickers = {
     SYMBOL_RE,
+    CRYPTO_BASES,
+    isCryptoSymbol,
     normalizeSymbol,
     isValidSymbol,
     makeTicker,

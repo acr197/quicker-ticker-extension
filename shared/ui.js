@@ -348,10 +348,12 @@
 
     const ranges = document.createElement('div');
     ranges.className = 'qt-ranges';
+    const isCrypto = Tickers.isCryptoSymbol(ticker.symbol);
     for (const r of RANGES) {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.textContent = r;
+      // Crypto trades 24/7, so the "1D" window is really a rolling 24h.
+      btn.textContent = (r === '1D' && isCrypto) ? '24H' : r;
       btn.className = 'qt-range' + (r === state.expandedRange ? ' active' : '');
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
@@ -478,13 +480,18 @@
     // News
     const newsBox = qs(state.el, `[data-news-for="${cssEscape(symbol)}"]`);
     if (newsBox && range === '1D') {
-      // Load news once per expansion (not per range)
+      // Load news once per expansion (not per range). Pass the asset name
+      // so offscreen can filter out articles that only coincidentally
+      // contain the ticker as a substring.
+      const q = state.quotes[symbol];
+      const ticker = state.watchlist.find((t) => t.symbol === symbol);
+      const name = (q && q.name) || (ticker && ticker.name) || '';
       const cachedNews = await Storage.getCachedNews(symbol);
       if (cachedNews && Storage.isNewsFresh(cachedNews)) {
         renderNews(newsBox, cachedNews.headlines || []);
       }
       try {
-        const freshNews = await callOffscreen('fetchNews', { symbol });
+        const freshNews = await callOffscreen('fetchNews', { symbol, name });
         if (freshNews && freshNews.headlines) {
           await Storage.setCachedNews(symbol, freshNews);
           if (state.expandedSymbol === symbol) {
@@ -515,8 +522,15 @@
       const li = document.createElement('li');
       const a = document.createElement('a');
       a.href = '#';
-      a.textContent = h.title;
       a.title = h.title;
+      const dateStr = formatNewsDate(h.providerPublishTime);
+      if (dateStr) {
+        const dateEl = document.createElement('span');
+        dateEl.className = 'qt-news-date';
+        dateEl.textContent = dateStr + ' ';
+        a.appendChild(dateEl);
+      }
+      a.appendChild(document.createTextNode(h.title));
       a.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -526,6 +540,16 @@
       ul.appendChild(li);
     }
     container.appendChild(ul);
+  }
+
+  function formatNewsDate(ts) {
+    if (typeof ts !== 'number' || !isFinite(ts) || ts <= 0) return '';
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return '';
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}.${m}.${day}`;
   }
 
   // ---------- Total row ----------
