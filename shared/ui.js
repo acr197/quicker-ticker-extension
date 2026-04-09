@@ -258,58 +258,59 @@
     handle.addEventListener('click', (ev) => ev.stopPropagation());
     row.appendChild(handle);
 
-    // Drag-and-drop events
+    // Drag-and-drop events.
+    // The dragged row is physically moved in the DOM on dragover so the other
+    // rows visibly shift around it and the user can see exactly where the
+    // drop will land. The browser-generated drag ghost follows the cursor.
     row.addEventListener('dragstart', (ev) => {
       state.dragFrom = ticker.symbol;
       ev.dataTransfer.effectAllowed = 'move';
       ev.dataTransfer.setData('text/plain', ticker.symbol);
-      // Delay so the browser snapshot is taken before we dim the row
+      // Collapse any expanded card so the DOM is stable while we reorder.
+      if (state.expandedSymbol) {
+        state.expandedSymbol = null;
+        const exp = qs(state.el, '#qt-list').querySelector('.qt-expansion');
+        if (exp) exp.remove();
+        qs(state.el, '#qt-list').querySelectorAll('.qt-row.expanded')
+          .forEach((el) => el.classList.remove('expanded'));
+      }
+      // Delay so the browser snapshot is taken before we dim the row.
       setTimeout(() => row.classList.add('qt-dragging'), 0);
     });
 
-    row.addEventListener('dragend', () => {
-      state.dragFrom = null;
+    row.addEventListener('dragend', async () => {
       row.classList.remove('qt-dragging');
-      qs(state.el, '#qt-list').querySelectorAll('.qt-drag-over')
-        .forEach((el) => el.classList.remove('qt-drag-over'));
+      const fromSymbol = state.dragFrom;
+      state.dragFrom = null;
+      if (!fromSymbol) return;
+      // Commit the new order from the current DOM arrangement.
+      await commitDomOrder(state);
     });
 
     row.addEventListener('dragover', (ev) => {
       if (!state.dragFrom || state.dragFrom === ticker.symbol) return;
+      // Only reorder within the same group.
+      const fromTicker = state.watchlist.find((t) => t.symbol === state.dragFrom);
+      if (!fromTicker || fromTicker.group !== ticker.group) return;
       ev.preventDefault();
       ev.dataTransfer.dropEffect = 'move';
-      qs(state.el, '#qt-list').querySelectorAll('.qt-drag-over')
-        .forEach((el) => el.classList.remove('qt-drag-over'));
-      row.classList.add('qt-drag-over');
-    });
-
-    row.addEventListener('dragleave', (ev) => {
-      if (!row.contains(ev.relatedTarget)) {
-        row.classList.remove('qt-drag-over');
+      const list = qs(state.el, '#qt-list');
+      const dragged = list.querySelector('.qt-row.qt-dragging');
+      if (!dragged || dragged === row) return;
+      // Insert dragged before or after `row` based on cursor Y midpoint.
+      const rect = row.getBoundingClientRect();
+      const midY = rect.top + rect.height / 2;
+      if (ev.clientY < midY) {
+        list.insertBefore(dragged, row);
+      } else {
+        list.insertBefore(dragged, row.nextSibling);
       }
     });
 
-    row.addEventListener('drop', async (ev) => {
+    row.addEventListener('drop', (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-      row.classList.remove('qt-drag-over');
-      const fromSymbol = state.dragFrom;
-      state.dragFrom = null;
-      if (!fromSymbol || fromSymbol === ticker.symbol) return;
-      const fromTicker = state.watchlist.find((t) => t.symbol === fromSymbol);
-      if (!fromTicker || fromTicker.group !== ticker.group) return;
-      // Optimistic update for immediate responsiveness
-      const newList = state.watchlist.slice();
-      const fromIdx = newList.findIndex((t) => t.symbol === fromSymbol);
-      if (fromIdx === -1) return;
-      const [item] = newList.splice(fromIdx, 1);
-      const insertIdx = newList.findIndex((t) => t.symbol === ticker.symbol);
-      if (insertIdx === -1) return;
-      newList.splice(insertIdx, 0, item);
-      state.watchlist = newList;
-      renderWatchlist(state);
-      // Persist (storage listener will trigger a second render — that's fine)
-      await Tickers.reorderInGroup(fromSymbol, ticker.symbol);
+      // The actual reorder already happened in dragover; dragend commits it.
     });
 
     // Symbol + name
@@ -388,6 +389,36 @@
     });
 
     return row;
+  }
+
+  // Walk the current DOM order of rendered ticker rows and persist the
+  // resulting watchlist order. Used after a live drag reorder.
+  async function commitDomOrder(state) {
+    const list = qs(state.el, '#qt-list');
+    if (!list) return;
+    const rowEls = list.querySelectorAll('.qt-row');
+    const bySymbol = {};
+    for (const t of state.watchlist) bySymbol[t.symbol] = t;
+    const newList = [];
+    const seen = new Set();
+    for (const el of rowEls) {
+      const sym = el.getAttribute('data-symbol');
+      if (sym && bySymbol[sym] && !seen.has(sym)) {
+        newList.push(bySymbol[sym]);
+        seen.add(sym);
+      }
+    }
+    // Keep any rows that weren't in the DOM (shouldn't happen normally).
+    for (const t of state.watchlist) {
+      if (!seen.has(t.symbol)) newList.push(t);
+    }
+    // Only persist if the order actually changed.
+    const before = state.watchlist.map((t) => t.symbol).join(',');
+    const after  = newList.map((t) => t.symbol).join(',');
+    if (before === after) return;
+    for (let i = 0; i < newList.length; i++) newList[i].order = i;
+    state.watchlist = newList;
+    await Storage.setWatchlist(newList);
   }
 
   function makeDragHandle() {
@@ -485,11 +516,14 @@
     const aiBtn = document.createElement('button');
     aiBtn.type = 'button';
     aiBtn.className = 'qt-ai-btn';
-    aiBtn.title = 'AI Insights (coming soon)';
-    aiBtn.setAttribute('aria-label', 'AI Insights (coming soon)');
-    aiBtn.disabled = true;
+    aiBtn.title = 'AI Insights';
+    aiBtn.setAttribute('aria-label', 'AI Insights');
     // Star icon
     aiBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+    aiBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openAiInsightsModal(state, ticker);
+    });
     footer.appendChild(aiBtn);
 
     const removeBtn = document.createElement('button');
@@ -635,6 +669,12 @@
         a.appendChild(dateEl);
       }
       a.appendChild(document.createTextNode(h.title));
+      if (h.publisher) {
+        const src = document.createElement('span');
+        src.className = 'qt-news-source';
+        src.textContent = ' (' + h.publisher + ')';
+        a.appendChild(src);
+      }
       a.addEventListener('click', (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -644,6 +684,159 @@
       ul.appendChild(li);
     }
     container.appendChild(ul);
+  }
+
+  // ---------- AI Insights modal ----------
+
+  const AI_DISCLAIMER = 'This is not financial advice. Quicker Ticker is not a broker-dealer, investment adviser, or fiduciary. AI-generated content may be inaccurate, outdated, or incomplete and should not be relied upon for investment decisions. Always do your own research and consult a licensed financial professional before making any investment.';
+
+  async function openAiInsightsModal(state, ticker) {
+    // Remove any existing modal first.
+    const existing = document.querySelector('.qt-ai-modal-backdrop');
+    if (existing) existing.remove();
+
+    const q = state.quotes[ticker.symbol];
+    const name = (q && q.name) || ticker.name || '';
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'qt-ai-modal-backdrop';
+
+    const modal = document.createElement('div');
+    modal.className = 'qt-ai-modal';
+    // Prevent clicks inside the card from dismissing the modal.
+    modal.addEventListener('click', (ev) => ev.stopPropagation());
+
+    // Header
+    const header = document.createElement('div');
+    header.className = 'qt-ai-modal-header';
+    const title = document.createElement('div');
+    title.className = 'qt-ai-modal-title';
+    title.innerHTML = '<span class="qt-ai-star">★</span> AI Insights · ' + escapeHtml(ticker.symbol);
+    header.appendChild(title);
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'qt-ai-modal-close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => backdrop.remove());
+    header.appendChild(closeBtn);
+    modal.appendChild(header);
+
+    // Body — starts in loading state
+    const body = document.createElement('div');
+    body.className = 'qt-ai-modal-body';
+    body.appendChild(makeAiLoading());
+    modal.appendChild(body);
+
+    // Disclaimer
+    const disclaimer = document.createElement('div');
+    disclaimer.className = 'qt-ai-modal-disclaimer';
+    disclaimer.textContent = AI_DISCLAIMER;
+    modal.appendChild(disclaimer);
+
+    backdrop.appendChild(modal);
+    // Click outside the card closes the modal.
+    backdrop.addEventListener('click', (ev) => {
+      if (ev.target === backdrop) backdrop.remove();
+    });
+    // Escape key closes the modal.
+    const onKey = (ev) => {
+      if (ev.key === 'Escape') {
+        backdrop.remove();
+        document.removeEventListener('keydown', onKey);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+
+    document.body.appendChild(backdrop);
+
+    // Kick off the fetch.
+    try {
+      const data = await callOffscreen('fetchAiInsights', { symbol: ticker.symbol, name });
+      body.textContent = '';
+      body.appendChild(renderAiResponse(data && data.text || ''));
+    } catch (err) {
+      body.textContent = '';
+      const errEl = document.createElement('div');
+      errEl.className = 'qt-ai-error';
+      errEl.textContent = 'Could not load AI insights. ' + (err && err.message || '');
+      body.appendChild(errEl);
+    }
+  }
+
+  function makeAiLoading() {
+    const wrap = document.createElement('div');
+    wrap.className = 'qt-ai-loading';
+    wrap.textContent = 'Analyzing with AI…';
+    return wrap;
+  }
+
+  // Parse the structured response from the AI into labeled sections.
+  // Expected markers: "PAST PERFORMANCE:", "FUTURE OUTLOOK:", "ADVICE:"
+  function renderAiResponse(text) {
+    const container = document.createElement('div');
+    container.className = 'qt-ai-response';
+
+    const sections = parseAiSections(text);
+    const labels = [
+      { key: 'past',    title: 'Past performance' },
+      { key: 'future',  title: 'Future outlook' },
+      { key: 'advice',  title: 'Consideration' }
+    ];
+
+    let rendered = 0;
+    for (const { key, title } of labels) {
+      const content = sections[key];
+      if (!content) continue;
+      rendered++;
+      const sec = document.createElement('div');
+      sec.className = 'qt-ai-section';
+      const h = document.createElement('div');
+      h.className = 'qt-ai-section-title';
+      h.textContent = title;
+      const p = document.createElement('div');
+      p.className = 'qt-ai-section-body';
+      p.textContent = content;
+      sec.appendChild(h);
+      sec.appendChild(p);
+      container.appendChild(sec);
+    }
+
+    // Fallback: if no markers were found, render the raw text.
+    if (rendered === 0) {
+      const p = document.createElement('div');
+      p.className = 'qt-ai-section-body';
+      p.textContent = text || 'No response.';
+      container.appendChild(p);
+    }
+    return container;
+  }
+
+  function parseAiSections(text) {
+    const out = { past: '', future: '', advice: '' };
+    if (!text || typeof text !== 'string') return out;
+    // Split on known section headings. Case-insensitive, tolerant of bold.
+    const re = /\b(PAST PERFORMANCE|FUTURE OUTLOOK|ADVICE)\s*:\s*/gi;
+    const matches = [];
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      matches.push({ key: m[1].toUpperCase(), start: m.index, end: re.lastIndex });
+    }
+    for (let i = 0; i < matches.length; i++) {
+      const { key, end } = matches[i];
+      const nextStart = i + 1 < matches.length ? matches[i + 1].start : text.length;
+      const body = text.slice(end, nextStart).replace(/\*\*/g, '').trim();
+      if (key === 'PAST PERFORMANCE') out.past = body;
+      else if (key === 'FUTURE OUTLOOK') out.future = body;
+      else if (key === 'ADVICE') out.advice = body;
+    }
+    return out;
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
   }
 
   function formatNewsDate(ts) {
