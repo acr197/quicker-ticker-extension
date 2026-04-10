@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Quicker Ticker",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Fast stock + ETF watchlist with grouping, sparklines, charts, and news. Works out of the box, no API keys required.",
   "action": {
     "default_title": "Quicker Ticker",
