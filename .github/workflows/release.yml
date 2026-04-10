@@ -1,0 +1,84 @@
+name: Bump version and release
+
+# Automatically bumps the patch version on every push to main that isn't
+# the bot's own bump commit, then publishes a GitHub release with a
+# versioned zip asset (e.g. quicker-ticker-v2.0.3.zip) so downloads from
+# the Releases page reflect the current version in their filename.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bump-and-release:
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Bump patch version in manifest.json
+        id: bump
+        run: |
+          CURRENT=$(node -p "require('./manifest.json').version")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          NEW="$MAJOR.$MINOR.$((PATCH+1))"
+          echo "old=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "new=$NEW"     >> "$GITHUB_OUTPUT"
+          node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            m.version = '$NEW';
+            fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
+          "
+
+      - name: Commit bump
+        run: |
+          git add manifest.json
+          if git diff --cached --quiet; then
+            echo "no version change — skipping commit"
+            exit 0
+          fi
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new }} [skip ci]"
+          git push origin HEAD:main
+
+      - name: Build release zip
+        run: |
+          VERSION="${{ steps.bump.outputs.new }}"
+          ZIP="quicker-ticker-v${VERSION}.zip"
+          # Only ship the runtime extension files — no CI metadata or docs.
+          zip -r "$ZIP" \
+            manifest.json \
+            background.js \
+            offscreen.html offscreen.js \
+            popup.html popup.css popup.js \
+            sidepanel.html sidepanel.css sidepanel.js \
+            options.html options.css options.js \
+            shared \
+            icons \
+            LICENSE
+          echo "zip=$ZIP" >> "$GITHUB_ENV"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.new }}
+          name: v${{ steps.bump.outputs.new }}
+          body: |
+            Automated release for version ${{ steps.bump.outputs.new }}.
+
+            Download `quicker-ticker-v${{ steps.bump.outputs.new }}.zip` below — the filename reflects the version.
+          files: ${{ env.zip }}
+          fail_on_unmatched_files: true

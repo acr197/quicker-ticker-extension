@@ -27,7 +27,13 @@
       expandedSymbol: null,
       expandedRange: '1D',
       searchTimer: null,
-      dragFrom: null
+      dragFrom: null,       // symbol of ticker row being dragged
+      dragFromGroup: null,  // group name of group header being dragged
+      renderGen: 0,         // incremented on every renderWatchlist, used to
+                             // discard stale async sparkline updates so the
+                             // chart doesn't briefly revert to a flat line
+      renderScheduled: false // coalesces rapid-fire storage events into
+                             // a single render per animation frame
     };
   }
 
@@ -44,14 +50,29 @@
 
   function listenStorageChanges(state) {
     chrome.storage.onChanged.addListener(async (changes, area) => {
+      let dirty = false;
       if (area === 'sync' && (changes.enableGrouping || changes.showGroupAverages || changes.personalValue || changes.showCrypto || changes.groups)) {
         state.prefs = await Storage.getPrefs();
-        renderWatchlist(state);
+        dirty = true;
       }
       if (area === 'local' && changes.watchlist) {
         state.watchlist = changes.watchlist.newValue || [];
-        renderWatchlist(state);
+        dirty = true;
       }
+      if (dirty) scheduleRender(state);
+    });
+  }
+
+  // Coalesce rapid storage events (e.g. prefs + watchlist updated together
+  // when a group is deleted) into a single render frame. Prevents stale
+  // async sparkline loaders from racing two consecutive renders and
+  // leaving one ticker on its synthetic 2-point fallback.
+  function scheduleRender(state) {
+    if (state.renderScheduled) return;
+    state.renderScheduled = true;
+    requestAnimationFrame(() => {
+      state.renderScheduled = false;
+      renderWatchlist(state);
     });
   }
 
@@ -140,40 +161,112 @@
   // ---------- Watchlist rendering ----------
 
   function renderWatchlist(state) {
+    state.renderGen++;
+    const gen = state.renderGen;
+
     const list = qs(state.el, '#qt-list');
     list.textContent = '';
 
+    const grouping = !!(state.prefs && state.prefs.enableGrouping);
+
     if (!state.watchlist || state.watchlist.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'qt-empty';
-      empty.textContent = 'No tickers yet. Search above to add one.';
-      list.appendChild(empty);
+      // When grouping is on we still want to show the (empty) groups so
+      // the user can see them configured and eventually drop into them.
+      if (grouping) {
+        renderGroupedSections(state, list, []);
+      } else {
+        const empty = document.createElement('div');
+        empty.className = 'qt-empty';
+        empty.textContent = 'No tickers yet. Search above to add one.';
+        list.appendChild(empty);
+      }
       renderTotalRow(state);
       return;
     }
 
-    const grouping = !!(state.prefs && state.prefs.enableGrouping);
-    const groups = grouping
-      ? Tickers.groupBy(state.watchlist, state.prefs.groups || ['Watchlist'])
-      : [{ name: '', tickers: state.watchlist }];
-
-    for (const group of groups) {
-      if (group.tickers.length === 0 && !grouping) continue;
-      if (group.tickers.length === 0) continue;
-      if (grouping && group.name) {
-        list.appendChild(renderGroupHeader(state, group));
-      }
-      for (let i = 0; i < group.tickers.length; i++) {
-        const t = group.tickers[i];
+    if (grouping) {
+      renderGroupedSections(state, list, state.watchlist);
+    } else {
+      // Flat list: keep the watchlist array order.
+      for (const t of state.watchlist) {
         const isExpanded = state.expandedSymbol === t.symbol;
-        list.appendChild(renderTickerRow(state, t, group, i, isExpanded));
+        list.appendChild(renderTickerRow(state, t, { name: '' }, isExpanded));
         if (isExpanded) list.appendChild(renderExpansion(state, t));
       }
     }
 
     renderTotalRow(state);
     // Asynchronously replace synthetic sparklines with real intraday data.
-    loadSparklines(state);
+    // Tagged with the current generation so stale fetches can't overwrite
+    // a newer render's sparkline with the previous group's data.
+    loadSparklines(state, gen);
+  }
+
+  // Render the list as an ordered sequence of group sections. Empty groups
+  // are still shown (as a drop target) so the user can drop tickers into
+  // them and the toggle visibly does something even before tickers move.
+  function renderGroupedSections(state, list, watchlist) {
+    const groupNames = (state.prefs && state.prefs.groups && state.prefs.groups.length)
+      ? state.prefs.groups.slice()
+      : ['Watchlist'];
+
+    // Pick up any orphan group name referenced by a ticker but missing
+    // from prefs — can happen after an import or corrupted prefs.
+    for (const t of watchlist) {
+      const g = t.group || 'Watchlist';
+      if (!groupNames.includes(g)) groupNames.push(g);
+    }
+
+    // Bucket tickers by group, preserving their watchlist array order.
+    const buckets = new Map();
+    for (const g of groupNames) buckets.set(g, []);
+    for (const t of watchlist) {
+      const g = t.group || 'Watchlist';
+      if (!buckets.has(g)) buckets.set(g, []);
+      buckets.get(g).push(t);
+    }
+
+    for (const groupName of groupNames) {
+      const tickers = buckets.get(groupName) || [];
+      list.appendChild(renderGroupHeader(state, { name: groupName, tickers }));
+      if (tickers.length === 0) {
+        list.appendChild(renderEmptyGroupDropzone(state, groupName));
+        continue;
+      }
+      for (const t of tickers) {
+        const isExpanded = state.expandedSymbol === t.symbol;
+        list.appendChild(renderTickerRow(state, t, { name: groupName }, isExpanded));
+        if (isExpanded) list.appendChild(renderExpansion(state, t));
+      }
+    }
+  }
+
+  // Visible drop target for groups with no tickers. Mirrors the hit
+  // behavior of a ticker row so tickers can be dragged into it.
+  function renderEmptyGroupDropzone(state, groupName) {
+    const dz = document.createElement('div');
+    dz.className = 'qt-group-empty';
+    dz.setAttribute('data-empty-group', groupName);
+    dz.textContent = 'Drop tickers here';
+
+    dz.addEventListener('dragover', (ev) => {
+      if (!state.dragFrom) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      dz.classList.add('qt-group-empty-over');
+      const list = qs(state.el, '#qt-list');
+      const dragged = list.querySelector('.qt-row.qt-dragging');
+      if (!dragged) return;
+      // Park the dragged row right before this dropzone so the
+      // subsequent dragend commit picks up the group change.
+      list.insertBefore(dragged, dz);
+    });
+    dz.addEventListener('dragleave', () => dz.classList.remove('qt-group-empty-over'));
+    dz.addEventListener('drop', (ev) => {
+      ev.preventDefault();
+      dz.classList.remove('qt-group-empty-over');
+    });
+    return dz;
   }
 
   // ---------- Sparkline data loading ----------
@@ -181,31 +274,36 @@
   // Fetches real 1-D chart data for every visible symbol and updates the
   // sparkline SVGs in place without triggering a full list re-render.
   // Crypto automatically gets a rolling 24 h window (handled by offscreen.js).
-  function loadSparklines(state) {
+  // `gen` is the render generation this load belongs to — any update that
+  // arrives after a newer render is silently dropped.
+  function loadSparklines(state, gen) {
     const symbols = state.watchlist.map((t) => t.symbol);
     for (const sym of symbols) {
-      loadSymbolSparkline(state, sym);
+      loadSymbolSparkline(state, sym, gen);
     }
   }
 
-  async function loadSymbolSparkline(state, symbol) {
+  async function loadSymbolSparkline(state, symbol, gen) {
     try {
       const cached = await Storage.getCachedChart(symbol, '1D');
       if (cached && Storage.isChartFresh(cached, '1D') && cached.points && cached.points.length >= 2) {
-        updateSparkline(state, symbol, cached.points);
+        updateSparkline(state, symbol, cached.points, gen);
         return;
       }
       const fresh = await callOffscreen('fetchChart', { symbol, range: '1D' });
       if (fresh && fresh.points && fresh.points.length >= 2) {
         await Storage.setCachedChart(symbol, '1D', fresh);
-        updateSparkline(state, symbol, fresh.points);
+        updateSparkline(state, symbol, fresh.points, gen);
       }
     } catch {
       // Keep the synthetic sparkline on error.
     }
   }
 
-  function updateSparkline(state, symbol, points) {
+  function updateSparkline(state, symbol, points, gen) {
+    // Drop stale updates from previous renders so a late cache hit can't
+    // overwrite a newer render's sparkline with old-generation data.
+    if (typeof gen === 'number' && gen !== state.renderGen) return;
     const cell = state.el.querySelector(`[data-spark-for="${cssEscape(symbol)}"]`);
     if (!cell) return;
     cell.textContent = '';
@@ -217,6 +315,13 @@
   function renderGroupHeader(state, group) {
     const row = document.createElement('div');
     row.className = 'qt-group';
+    row.setAttribute('data-group', group.name);
+    row.draggable = true;
+
+    const handle = makeDragHandle();
+    handle.classList.add('qt-group-handle');
+    handle.title = 'Drag to reorder group';
+    row.appendChild(handle);
 
     const name = document.createElement('div');
     name.className = 'qt-group-name';
@@ -232,7 +337,141 @@
         row.appendChild(pill);
       }
     }
+
+    // ---------- Group-level drag-and-drop ----------
+    // Dragging a group header moves all of its tickers as a unit.
+    row.addEventListener('dragstart', (ev) => {
+      state.dragFromGroup = group.name;
+      state.dragFrom = null;
+      ev.dataTransfer.effectAllowed = 'move';
+      try { ev.dataTransfer.setData('text/plain', 'group:' + group.name); } catch {}
+      // Collapse any expanded card inline (do NOT re-render — that would
+      // destroy the header being dragged and kill the drag operation).
+      if (state.expandedSymbol) {
+        state.expandedSymbol = null;
+        const listEl = qs(state.el, '#qt-list');
+        const exp = listEl.querySelector('.qt-expansion');
+        if (exp) exp.remove();
+        listEl.querySelectorAll('.qt-row.expanded')
+          .forEach((el) => el.classList.remove('expanded'));
+      }
+      setTimeout(() => row.classList.add('qt-group-dragging'), 0);
+    });
+
+    row.addEventListener('dragend', async () => {
+      row.classList.remove('qt-group-dragging');
+      const fromGroup = state.dragFromGroup;
+      state.dragFromGroup = null;
+      if (!fromGroup) return;
+      await commitGroupOrderFromDom(state);
+    });
+
+    row.addEventListener('dragover', (ev) => {
+      const list = qs(state.el, '#qt-list');
+
+      // Case 1: a whole group is being dragged → move the entire block.
+      if (state.dragFromGroup && state.dragFromGroup !== group.name) {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        const draggedHeader = list.querySelector('.qt-group.qt-group-dragging');
+        if (!draggedHeader || draggedHeader === row) return;
+        const draggedBlock = collectGroupBlock(list, draggedHeader);
+        const rect = row.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const insertBefore = ev.clientY < midY ? row : nextGroupBoundary(row);
+        for (const node of draggedBlock) {
+          list.insertBefore(node, insertBefore);
+        }
+        return;
+      }
+
+      // Case 2: a single ticker is being dragged over this header →
+      // dropping here places it at the top of this group.
+      if (state.dragFrom) {
+        ev.preventDefault();
+        ev.dataTransfer.dropEffect = 'move';
+        const dragged = list.querySelector('.qt-row.qt-dragging');
+        if (!dragged) return;
+        // Insert the dragged row right after this header so commitDomOrder
+        // reads its new group from this header's data-group attribute.
+        list.insertBefore(dragged, row.nextSibling);
+      }
+    });
+
+    row.addEventListener('drop', (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+
     return row;
+  }
+
+  // Collect every sibling that belongs to `header` (the header itself
+  // followed by all ticker rows / expansions / empty dropzones until the
+  // next group header).
+  function collectGroupBlock(list, header) {
+    const out = [header];
+    let node = header.nextSibling;
+    while (node && !(node.classList && node.classList.contains('qt-group'))) {
+      out.push(node);
+      node = node.nextSibling;
+    }
+    return out;
+  }
+
+  // Returns the element that marks the end of `header`'s block — either
+  // the next group header or null for the last group.
+  function nextGroupBoundary(header) {
+    let node = header.nextSibling;
+    while (node && !(node.classList && node.classList.contains('qt-group'))) {
+      node = node.nextSibling;
+    }
+    return node; // null ⇒ end of list, insertBefore(null) appends
+  }
+
+  // Walk the current DOM, harvest the group order from the .qt-group
+  // headers, reorder both prefs.groups and the watchlist so its rows
+  // are contiguous per group in the new order, then persist.
+  async function commitGroupOrderFromDom(state) {
+    const list = qs(state.el, '#qt-list');
+    if (!list) return;
+    const domGroups = [];
+    for (const el of list.children) {
+      if (el.classList && el.classList.contains('qt-group')) {
+        const g = el.getAttribute('data-group');
+        if (g && !domGroups.includes(g)) domGroups.push(g);
+      }
+    }
+    const prefsGroups = (state.prefs && state.prefs.groups) || [];
+    const beforeGroups = prefsGroups.join('|');
+    // Append any prefs group that wasn't in the DOM (shouldn't happen).
+    for (const g of prefsGroups) {
+      if (!domGroups.includes(g)) domGroups.push(g);
+    }
+    if (domGroups.join('|') !== beforeGroups) {
+      await Storage.setPrefs({ groups: domGroups });
+      state.prefs = Object.assign({}, state.prefs, { groups: domGroups });
+    }
+    // Reorder watchlist so tickers are contiguous per group in domGroups
+    // order, preserving relative order within each group.
+    const byGroup = new Map();
+    for (const g of domGroups) byGroup.set(g, []);
+    for (const t of state.watchlist) {
+      const g = t.group || 'Watchlist';
+      if (!byGroup.has(g)) byGroup.set(g, []);
+      byGroup.get(g).push(t);
+    }
+    const newList = [];
+    for (const g of domGroups) {
+      for (const t of (byGroup.get(g) || [])) newList.push(t);
+    }
+    // Any orphan groups not in domGroups (belt-and-suspenders)
+    for (const [g, arr] of byGroup.entries()) {
+      if (!domGroups.includes(g)) for (const t of arr) newList.push(t);
+    }
+    for (let i = 0; i < newList.length; i++) newList[i].order = i;
+    state.watchlist = newList;
+    await Storage.setWatchlist(newList);
   }
 
   function computeGroupAverage(state, tickers) {
@@ -245,7 +484,7 @@
     return sum / n;
   }
 
-  function renderTickerRow(state, ticker, group, indexInGroup, isExpanded) {
+  function renderTickerRow(state, ticker, group, isExpanded) {
     const row = document.createElement('div');
     row.className = 'qt-row' + (isExpanded ? ' expanded' : '');
     row.setAttribute('data-symbol', ticker.symbol);
@@ -262,8 +501,11 @@
     // The dragged row is physically moved in the DOM on dragover so the other
     // rows visibly shift around it and the user can see exactly where the
     // drop will land. The browser-generated drag ghost follows the cursor.
+    // Tickers can be dragged within their own group _or_ into another
+    // group — dragend resolves each row's new group from its DOM position.
     row.addEventListener('dragstart', (ev) => {
       state.dragFrom = ticker.symbol;
+      state.dragFromGroup = null;
       ev.dataTransfer.effectAllowed = 'move';
       ev.dataTransfer.setData('text/plain', ticker.symbol);
       // Collapse any expanded card so the DOM is stable while we reorder.
@@ -283,15 +525,12 @@
       const fromSymbol = state.dragFrom;
       state.dragFrom = null;
       if (!fromSymbol) return;
-      // Commit the new order from the current DOM arrangement.
+      // Commit the new order + group from the current DOM arrangement.
       await commitDomOrder(state);
     });
 
     row.addEventListener('dragover', (ev) => {
       if (!state.dragFrom || state.dragFrom === ticker.symbol) return;
-      // Only reorder within the same group.
-      const fromTicker = state.watchlist.find((t) => t.symbol === state.dragFrom);
-      if (!fromTicker || fromTicker.group !== ticker.group) return;
       ev.preventDefault();
       ev.dataTransfer.dropEffect = 'move';
       const list = qs(state.el, '#qt-list');
@@ -391,30 +630,50 @@
     return row;
   }
 
-  // Walk the current DOM order of rendered ticker rows and persist the
-  // resulting watchlist order. Used after a live drag reorder.
+  // Walk the current DOM order and persist the resulting watchlist order.
+  // Each row's group is inferred from the nearest preceding .qt-group
+  // header (if grouping is enabled), so a row dropped into a different
+  // group picks up that group's name automatically.
   async function commitDomOrder(state) {
     const list = qs(state.el, '#qt-list');
     if (!list) return;
-    const rowEls = list.querySelectorAll('.qt-row');
+    const grouping = !!(state.prefs && state.prefs.enableGrouping);
+
     const bySymbol = {};
     for (const t of state.watchlist) bySymbol[t.symbol] = t;
+
     const newList = [];
     const seen = new Set();
-    for (const el of rowEls) {
-      const sym = el.getAttribute('data-symbol');
-      if (sym && bySymbol[sym] && !seen.has(sym)) {
-        newList.push(bySymbol[sym]);
-        seen.add(sym);
+    let currentGroup = grouping
+      ? ((state.prefs.groups && state.prefs.groups[0]) || 'Watchlist')
+      : null;
+
+    for (const child of list.children) {
+      if (grouping && child.classList && child.classList.contains('qt-group')) {
+        currentGroup = child.getAttribute('data-group') || currentGroup;
+        continue;
+      }
+      if (child.classList && child.classList.contains('qt-row')) {
+        const sym = child.getAttribute('data-symbol');
+        if (sym && bySymbol[sym] && !seen.has(sym)) {
+          const t = bySymbol[sym];
+          if (grouping && currentGroup && t.group !== currentGroup) {
+            // Clone so change is observable via === compare on persist.
+            bySymbol[sym] = Object.assign({}, t, { group: currentGroup });
+          }
+          newList.push(bySymbol[sym]);
+          seen.add(sym);
+        }
       }
     }
     // Keep any rows that weren't in the DOM (shouldn't happen normally).
     for (const t of state.watchlist) {
       if (!seen.has(t.symbol)) newList.push(t);
     }
-    // Only persist if the order actually changed.
-    const before = state.watchlist.map((t) => t.symbol).join(',');
-    const after  = newList.map((t) => t.symbol).join(',');
+
+    // Only persist if something actually changed (order or group).
+    const before = state.watchlist.map((t) => t.symbol + '@' + (t.group || '')).join(',');
+    const after  = newList.map((t) => t.symbol + '@' + (t.group || '')).join(',');
     if (before === after) return;
     for (let i = 0; i < newList.length; i++) newList[i].order = i;
     state.watchlist = newList;

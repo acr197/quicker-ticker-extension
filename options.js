@@ -1,4 +1,5 @@
 // options.js — Settings page logic.
+// All prefs auto-save immediately on any change; there is no Save button.
 // Reads/writes prefs via QTStorage. Uses chrome.tabs.create for any
 // outbound link, never inline href navigation.
 
@@ -6,7 +7,6 @@
   'use strict';
 
   const Storage = window.QTStorage;
-  const Tickers = window.QTTickers;
 
   const els = {};
   const ids = [
@@ -32,7 +32,6 @@
     'opt-import',
     'opt-import-file',
     'opt-clear',
-    'opt-save',
     'opt-status',
     'opt-modal',
     'opt-modal-title',
@@ -69,11 +68,40 @@
     els['opt-alphaVantageKey'].value = prefs.alphaVantageKey || '';
     els['opt-coinGeckoKey'].value = prefs.coinGeckoKey || '';
     els['opt-coinGeckoUseFreeTier'].checked = prefs.coinGeckoUseFreeTier !== false;
+    els['opt-coinGeckoKey'].disabled = els['opt-coinGeckoUseFreeTier'].checked;
     syncBackupVisibility();
     syncCryptoVisibility();
   }
 
+  // Every input in the prefs form auto-saves on change. Text inputs
+  // (API keys) also save on blur/input for instant feedback.
   function bindHandlers() {
+    const autoSaveTargets = [
+      'opt-enableGrouping',
+      'opt-showGroupAverages',
+      'opt-personalValue',
+      'opt-aiSummaries',
+      'opt-showCrypto',
+      'opt-defaultViewSidepanel',
+      'opt-backupSourcesEnabled',
+      'opt-coinGeckoUseFreeTier'
+    ];
+    for (const id of autoSaveTargets) {
+      els[id].addEventListener('change', autoSave);
+    }
+
+    // Debounce text-input auto-save so we're not thrashing storage on
+    // every keystroke while the user pastes a long API key.
+    const textInputs = ['opt-finnhubKey', 'opt-alphaVantageKey', 'opt-coinGeckoKey'];
+    let textTimer = null;
+    for (const id of textInputs) {
+      els[id].addEventListener('input', () => {
+        if (textTimer) clearTimeout(textTimer);
+        textTimer = setTimeout(autoSave, 400);
+      });
+      els[id].addEventListener('blur', autoSave);
+    }
+
     els['opt-backupSourcesEnabled'].addEventListener('change', syncBackupVisibility);
     els['opt-showCrypto'].addEventListener('change', syncCryptoVisibility);
     els['opt-coinGeckoUseFreeTier'].addEventListener('change', () => {
@@ -109,8 +137,6 @@
     els['opt-import'].addEventListener('click', () => els['opt-import-file'].click());
     els['opt-import-file'].addEventListener('change', importData);
     els['opt-clear'].addEventListener('click', confirmClearAll);
-
-    els['opt-save'].addEventListener('click', save);
 
     els['opt-modal-cancel'].addEventListener('click', closeModal);
   }
@@ -166,6 +192,7 @@
     await Storage.setPrefs({ groups });
     input.value = '';
     await renderGroups();
+    flashStatus('Saved');
   }
 
   async function renameGroup(ev) {
@@ -176,6 +203,11 @@
     const groups = (prefs.groups || []).slice();
     const oldName = groups[idx];
     if (oldName === newName) return;
+    if (groups.includes(newName)) {
+      flashStatus('Group already exists', true);
+      ev.target.value = oldName;
+      return;
+    }
     groups[idx] = newName;
     await Storage.setPrefs({ groups });
     // Migrate any tickers in the renamed group
@@ -185,32 +217,37 @@
       if (t.group === oldName) { t.group = newName; dirty = true; }
     }
     if (dirty) await Storage.setWatchlist(watchlist);
+    flashStatus('Saved');
   }
 
   async function deleteGroup(idx) {
     const prefs = await Storage.getPrefs();
     const groups = (prefs.groups || []).slice();
     if (groups.length <= 1) {
-      flashStatus('You must have at least one group');
+      flashStatus('You must have at least one group', true);
       return;
     }
-    const removed = groups.splice(idx, 1)[0];
-    const fallback = groups[0];
+    const removed = groups[idx];
+    const remaining = groups.filter((_, i) => i !== idx);
 
-    openModal({
-      title: 'Delete group?',
-      body: `Tickers in "${removed}" will be moved to "${fallback}".`,
-      confirmText: 'Delete',
-      destructive: true,
-      onConfirm: async () => {
-        await Storage.setPrefs({ groups });
-        const watchlist = await Storage.getWatchlist();
-        for (const t of watchlist) {
-          if (t.group === removed) t.group = fallback;
-        }
-        await Storage.setWatchlist(watchlist);
+    // Count tickers in the group being removed so we can label accurately.
+    const watchlist = await Storage.getWatchlist();
+    const affected = watchlist.filter((t) => t.group === removed);
+    const affectedCount = affected.length;
+
+    openDeleteGroupModal({
+      removed,
+      remaining,
+      affectedCount,
+      onConfirm: async ({ target, deleteAll }) => {
+        const nextWatchlist = deleteAll
+          ? watchlist.filter((t) => t.group !== removed)
+          : watchlist.map((t) => (t.group === removed ? Object.assign({}, t, { group: target }) : t));
+        await Storage.setPrefs({ groups: remaining });
+        await Storage.setWatchlist(nextWatchlist);
         await renderGroups();
         closeModal();
+        flashStatus('Saved');
       }
     });
   }
@@ -270,9 +307,9 @@
     });
   }
 
-  // ---------- Save ----------
+  // ---------- Auto-save ----------
 
-  async function save() {
+  async function autoSave() {
     const prefs = {
       enableGrouping: els['opt-enableGrouping'].checked,
       showGroupAverages: els['opt-showGroupAverages'].checked,
@@ -303,6 +340,8 @@
   function openModal(opts) {
     els['opt-modal-title'].textContent = opts.title || '';
     els['opt-modal-body'].textContent = opts.body || '';
+    // Reset any custom body content from previous openDeleteGroupModal calls.
+    els['opt-modal-body'].className = '';
     els['opt-modal-confirm'].textContent = opts.confirmText || 'OK';
     els['opt-modal-confirm'].classList.toggle('destructive', !!opts.destructive);
     modalOnConfirm = opts.onConfirm || closeModal;
@@ -310,6 +349,85 @@
     // Re-bind once to avoid stacking listeners
     els['opt-modal-confirm'].onclick = () => { if (modalOnConfirm) modalOnConfirm(); };
   }
+
+  // A richer modal that lets the user choose what to do with tickers
+  // when a group is deleted: move them to another group or delete them.
+  function openDeleteGroupModal({ removed, remaining, affectedCount, onConfirm }) {
+    els['opt-modal-title'].textContent = `Delete "${removed}"?`;
+
+    const body = els['opt-modal-body'];
+    body.textContent = '';
+    body.className = 'qt-opt-delete-body';
+
+    if (affectedCount === 0) {
+      const p = document.createElement('p');
+      p.textContent = 'This group is empty. It will be removed.';
+      body.appendChild(p);
+    } else {
+      const p = document.createElement('p');
+      p.textContent = `${affectedCount} ticker${affectedCount === 1 ? '' : 's'} currently live in this group. What should happen to them?`;
+      body.appendChild(p);
+
+      // Radio: move to another group
+      const moveWrap = document.createElement('label');
+      moveWrap.className = 'qt-opt-delete-choice';
+      const moveRadio = document.createElement('input');
+      moveRadio.type = 'radio';
+      moveRadio.name = 'qt-opt-delete-action';
+      moveRadio.value = 'move';
+      moveRadio.checked = true;
+      moveWrap.appendChild(moveRadio);
+      const moveLabel = document.createElement('span');
+      moveLabel.textContent = 'Move to ';
+      moveWrap.appendChild(moveLabel);
+
+      const select = document.createElement('select');
+      select.className = 'qt-opt-delete-select';
+      for (const g of remaining) {
+        const opt = document.createElement('option');
+        opt.value = g;
+        opt.textContent = g;
+        select.appendChild(opt);
+      }
+      select.addEventListener('focus', () => { moveRadio.checked = true; });
+      moveWrap.appendChild(select);
+      body.appendChild(moveWrap);
+
+      // Radio: delete all tickers in the group
+      const delWrap = document.createElement('label');
+      delWrap.className = 'qt-opt-delete-choice';
+      const delRadio = document.createElement('input');
+      delRadio.type = 'radio';
+      delRadio.name = 'qt-opt-delete-action';
+      delRadio.value = 'delete';
+      delWrap.appendChild(delRadio);
+      const delLabel = document.createElement('span');
+      delLabel.textContent = `Delete all ${affectedCount} ticker${affectedCount === 1 ? '' : 's'}`;
+      delWrap.appendChild(delLabel);
+      body.appendChild(delWrap);
+    }
+
+    els['opt-modal-confirm'].textContent = 'Delete group';
+    els['opt-modal-confirm'].classList.add('destructive');
+    els['opt-modal'].hidden = false;
+
+    modalOnConfirm = () => {
+      let target = remaining[0];
+      let deleteAll = false;
+      if (affectedCount > 0) {
+        const action = body.querySelector('input[name="qt-opt-delete-action"]:checked');
+        if (action && action.value === 'delete') {
+          deleteAll = true;
+        } else {
+          const sel = body.querySelector('.qt-opt-delete-select');
+          if (sel) target = sel.value;
+        }
+      }
+      onConfirm({ target, deleteAll });
+    };
+    els['opt-modal-confirm'].onclick = () => { if (modalOnConfirm) modalOnConfirm(); };
+  }
+
   function closeModal() {
     els['opt-modal'].hidden = true;
     modalOnConfirm = null;
