@@ -11,7 +11,7 @@
     enableGrouping: true,
     showGroupAverages: true,
     personalValue: false,
-    aiSummaries: true,
+    aiSummaries: false,
     showCrypto: false,
     defaultView: 'sidepanel',
     darkMode: true,

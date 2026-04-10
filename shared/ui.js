@@ -44,15 +44,34 @@
     state.el = opts.root || document.body;
     bindStaticHandlers(state);
     await reload(state);
+    applyDarkMode(state.prefs);
     listenStorageChanges(state);
     return state;
+  }
+
+  // Toggle the light-mode class on <body> based on prefs.darkMode.
+  // The sidepanel/popup CSS treats dark as the default (no class) and
+  // paints a light palette only when .qt-light is present.
+  function applyDarkMode(prefs) {
+    const isDark = prefs && prefs.darkMode !== false;
+    if (isDark) document.body.classList.remove('qt-light');
+    else document.body.classList.add('qt-light');
   }
 
   function listenStorageChanges(state) {
     chrome.storage.onChanged.addListener(async (changes, area) => {
       let dirty = false;
-      if (area === 'sync' && (changes.enableGrouping || changes.showGroupAverages || changes.personalValue || changes.showCrypto || changes.groups)) {
+      if (area === 'sync' && (
+        changes.enableGrouping ||
+        changes.showGroupAverages ||
+        changes.personalValue ||
+        changes.showCrypto ||
+        changes.groups ||
+        changes.aiSummaries ||
+        changes.darkMode
+      )) {
         state.prefs = await Storage.getPrefs();
+        if (changes.darkMode) applyDarkMode(state.prefs);
         dirty = true;
       }
       if (area === 'local' && changes.watchlist) {
@@ -355,6 +374,7 @@
         listEl.querySelectorAll('.qt-row.expanded')
           .forEach((el) => el.classList.remove('expanded'));
       }
+      attachDragGhost(ev, row, true);
       setTimeout(() => row.classList.add('qt-group-dragging'), 0);
     });
 
@@ -500,7 +520,9 @@
     // Drag-and-drop events.
     // The dragged row is physically moved in the DOM on dragover so the other
     // rows visibly shift around it and the user can see exactly where the
-    // drop will land. The browser-generated drag ghost follows the cursor.
+    // drop will land. A custom drag ghost (cloned from the row) follows the
+    // cursor so the card visibly lifts off — the native browser ghost is a
+    // flat screenshot that felt disconnected from the card.
     // Tickers can be dragged within their own group _or_ into another
     // group — dragend resolves each row's new group from its DOM position.
     row.addEventListener('dragstart', (ev) => {
@@ -516,6 +538,10 @@
         qs(state.el, '#qt-list').querySelectorAll('.qt-row.expanded')
           .forEach((el) => el.classList.remove('expanded'));
       }
+      // Build a ghost clone that mimics the card and stick it off-screen
+      // just long enough for setDragImage to snapshot it. Chrome takes the
+      // snapshot synchronously, so we can remove the ghost on the next tick.
+      attachDragGhost(ev, row, false);
       // Delay so the browser snapshot is taken before we dim the row.
       setTimeout(() => row.classList.add('qt-dragging'), 0);
     });
@@ -599,35 +625,167 @@
     }
 
     if (state.prefs && state.prefs.personalValue) {
-      const sharesWrap = document.createElement('div');
-      sharesWrap.className = 'qt-shares-wrap';
-      const sharesInput = document.createElement('input');
-      sharesInput.type = 'number';
-      sharesInput.min = '0';
-      sharesInput.step = 'any';
-      sharesInput.className = 'qt-shares';
-      sharesInput.placeholder = 'Sha';
-      sharesInput.value = ticker.shares ? String(ticker.shares) : '';
-      sharesInput.addEventListener('click', (ev) => ev.stopPropagation());
-      sharesInput.addEventListener('change', async () => {
-        await Tickers.setShares(ticker.symbol, parseFloat(sharesInput.value || '0'));
-      });
-      sharesWrap.appendChild(sharesInput);
-      right.appendChild(sharesWrap);
+      right.appendChild(buildSharesInput(state, ticker));
     }
 
     row.appendChild(right);
 
-    // Click + keyboard expand
+    // Click expands/collapses the card.
     row.addEventListener('click', () => toggleExpand(state, ticker.symbol));
+
+    // Keyboard:
+    //   Space                → toggle expand/collapse (matches click)
+    //   Enter                → same as Space
+    //   ArrowDown / ArrowUp  → focus the next/previous sibling card
+    //   Tab                  → native browser behavior (no preventDefault)
+    // Events originating inside inputs (e.g. the shares field) stop
+    // propagation at the input itself so this handler never sees them.
     row.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') {
+      if (ev.key === ' ' || ev.key === 'Enter') {
         ev.preventDefault();
         toggleExpand(state, ticker.symbol);
+        return;
+      }
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        focusSiblingRow(state, row, ev.key === 'ArrowDown' ? 1 : -1);
       }
     });
 
     return row;
+  }
+
+  // Build the personal-value shares input: a small pill with a "Sha" label,
+  // a tabular-number input, and a vertical ▲/▼ arrow pair. The input
+  // auto-widens as the user types (capped at 10 digits). Enter commits the
+  // value without expanding the card; blur commits via the native change.
+  function buildSharesInput(state, ticker) {
+    const wrap = document.createElement('div');
+    wrap.className = 'qt-shares-wrap';
+
+    const label = document.createElement('div');
+    label.className = 'qt-shares-label';
+    label.textContent = 'Sha';
+    wrap.appendChild(label);
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.className = 'qt-shares';
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.setAttribute('aria-label', ticker.symbol + ' shares');
+    input.value = ticker.shares ? String(ticker.shares) : '';
+    autosizeShares(input);
+
+    // Max 10 characters total (10 digits, or 9 digits + decimal point).
+    const MAX_CHARS = 10;
+    const sanitize = (raw) => {
+      // Allow digits and at most one decimal point. Drop everything else.
+      let s = String(raw).replace(/[^0-9.]/g, '');
+      const firstDot = s.indexOf('.');
+      if (firstDot !== -1) {
+        s = s.slice(0, firstDot + 1) + s.slice(firstDot + 1).replace(/\./g, '');
+      }
+      return s.slice(0, MAX_CHARS);
+    };
+
+    const commitValue = async () => {
+      const num = parseFloat(input.value || '0');
+      await Tickers.setShares(ticker.symbol, isFinite(num) ? num : 0);
+    };
+
+    // Click inside the input must not bubble to the row (which would toggle
+    // the expansion). Stop both mousedown and click so focus still lands.
+    input.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    input.addEventListener('click', (ev) => ev.stopPropagation());
+
+    input.addEventListener('input', () => {
+      const cleaned = sanitize(input.value);
+      if (cleaned !== input.value) input.value = cleaned;
+      autosizeShares(input);
+    });
+
+    input.addEventListener('change', commitValue);
+    input.addEventListener('blur', commitValue);
+
+    // Enter inside the shares input commits the value but must NOT bubble
+    // to the row's keydown handler, which would otherwise toggle the card.
+    input.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        commitValue();
+        input.blur();
+      }
+    });
+
+    wrap.appendChild(input);
+
+    const arrows = document.createElement('div');
+    arrows.className = 'qt-shares-arrows';
+
+    const bumpShares = (delta) => {
+      const current = parseFloat(input.value || '0');
+      const base = isFinite(current) ? current : 0;
+      const next = Math.max(0, base + delta);
+      const str = String(next);
+      input.value = sanitize(str);
+      autosizeShares(input);
+      commitValue();
+    };
+
+    const up = document.createElement('button');
+    up.type = 'button';
+    up.tabIndex = -1;
+    up.className = 'qt-shares-arrow qt-shares-inc';
+    up.setAttribute('aria-label', 'Increase shares');
+    up.textContent = '▲';
+    up.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    up.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      bumpShares(1);
+    });
+    arrows.appendChild(up);
+
+    const down = document.createElement('button');
+    down.type = 'button';
+    down.tabIndex = -1;
+    down.className = 'qt-shares-arrow qt-shares-dec';
+    down.setAttribute('aria-label', 'Decrease shares');
+    down.textContent = '▼';
+    down.addEventListener('mousedown', (ev) => ev.stopPropagation());
+    down.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      bumpShares(-1);
+    });
+    arrows.appendChild(down);
+
+    wrap.appendChild(arrows);
+
+    return wrap;
+  }
+
+  // Resize the shares input width to fit its value, capped so the pill
+  // still feels compact in the row. 4 chars minimum, 10 chars max.
+  function autosizeShares(input) {
+    const len = Math.min(10, Math.max(4, (input.value || '').length));
+    // ~8.5px per char for the tabular font + a little padding cushion.
+    input.style.width = (len * 8.5 + 12) + 'px';
+  }
+
+  // Move keyboard focus to the previous or next selectable card row.
+  // Called from the row's own keydown handler on ArrowUp / ArrowDown.
+  function focusSiblingRow(state, fromRow, direction) {
+    const list = qs(state.el, '#qt-list');
+    if (!list) return;
+    const rows = Array.from(list.querySelectorAll('.qt-row'));
+    const idx = rows.indexOf(fromRow);
+    if (idx === -1) return;
+    const next = rows[idx + direction];
+    if (next && typeof next.focus === 'function') next.focus();
   }
 
   // Walk the current DOM order and persist the resulting watchlist order.
@@ -678,6 +836,36 @@
     for (let i = 0; i < newList.length; i++) newList[i].order = i;
     state.watchlist = newList;
     await Storage.setWatchlist(newList);
+  }
+
+  // Build a floating ghost clone of the element being dragged and wire it
+  // up as the HTML5 drag image. The ghost is sized to match the source and
+  // positioned under the cursor so the card visibly lifts off. Browsers
+  // snapshot the drag image synchronously during dragstart, so we can
+  // remove the DOM node on the next frame without affecting the visual.
+  function attachDragGhost(ev, sourceEl, isGroup) {
+    try {
+      const rect = sourceEl.getBoundingClientRect();
+      const ghost = sourceEl.cloneNode(true);
+      ghost.classList.add('qt-drag-ghost');
+      if (isGroup) ghost.classList.add('qt-drag-ghost-group');
+      // Strip any interactive state carried over from the clone so the
+      // ghost purely serves as a visual.
+      ghost.classList.remove('qt-dragging', 'qt-group-dragging', 'expanded');
+      ghost.removeAttribute('draggable');
+      ghost.style.width = rect.width + 'px';
+      ghost.style.height = rect.height + 'px';
+      document.body.appendChild(ghost);
+      const offsetX = Math.max(0, Math.min(rect.width, ev.clientX - rect.left));
+      const offsetY = Math.max(0, Math.min(rect.height, ev.clientY - rect.top));
+      ev.dataTransfer.setDragImage(ghost, offsetX, offsetY);
+      // Remove after the browser has captured the snapshot. Double rAF is
+      // safest across engines; setTimeout(0) is fine in Chromium.
+      setTimeout(() => { if (ghost.parentNode) ghost.parentNode.removeChild(ghost); }, 0);
+    } catch {
+      // If setDragImage is unavailable or throws, fall back to the native
+      // drag ghost — still functional, just less polished.
+    }
   }
 
   function makeDragHandle() {
@@ -772,18 +960,27 @@
     const footer = document.createElement('div');
     footer.className = 'qt-expansion-footer';
 
-    const aiBtn = document.createElement('button');
-    aiBtn.type = 'button';
-    aiBtn.className = 'qt-ai-btn';
-    aiBtn.title = 'AI Insights';
-    aiBtn.setAttribute('aria-label', 'AI Insights');
-    // Star icon
-    aiBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
-    aiBtn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      openAiInsightsModal(state, ticker);
-    });
-    footer.appendChild(aiBtn);
+    // The AI star is only rendered when the feature is enabled in
+    // settings. When it's off, a placeholder keeps the Remove button
+    // anchored to the right edge.
+    if (state.prefs && state.prefs.aiSummaries) {
+      const aiBtn = document.createElement('button');
+      aiBtn.type = 'button';
+      aiBtn.className = 'qt-ai-btn';
+      aiBtn.title = 'AI Insights';
+      aiBtn.setAttribute('aria-label', 'AI Insights');
+      // Star icon
+      aiBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+      aiBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openAiInsightsModal(state, ticker);
+      });
+      footer.appendChild(aiBtn);
+    } else {
+      // Spacer to keep Remove right-aligned in the flex footer.
+      const spacer = document.createElement('div');
+      footer.appendChild(spacer);
+    }
 
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
@@ -1221,27 +1418,71 @@
   function toggleBonuses(state) {
     const panel = qs(state.el, '#qt-bonuses-panel');
     const btn = qs(state.el, '#qt-bonuses-toggle');
-    const isOpen = panel.classList.toggle('open');
-    btn.setAttribute('aria-expanded', String(isOpen));
-    if (isOpen && panel.children.length === 0) {
+    const willOpen = !panel.classList.contains('open');
+
+    // Lazy-build the content the first time we open.
+    if (willOpen && !panel.dataset.built) {
       buildBonusesPanel(state, panel);
+      panel.dataset.built = '1';
     }
+
+    panel.classList.toggle('open', willOpen);
+    btn.setAttribute('aria-expanded', String(willOpen));
+    btn.textContent = willOpen ? 'Close Bonuses & Discounts' : 'Bonuses & Discounts';
+  }
+
+  function closeBonuses(state) {
+    const panel = qs(state.el, '#qt-bonuses-panel');
+    const btn = qs(state.el, '#qt-bonuses-toggle');
+    panel.classList.remove('open');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.textContent = 'Bonuses & Discounts';
   }
 
   function buildBonusesPanel(state, panel) {
     panel.textContent = '';
 
+    // Panel header with title + close button — the toggle button in the
+    // footer also closes the panel, but an explicit × is expected in a
+    // takeover overlay.
+    const header = document.createElement('div');
+    header.className = 'qt-bonuses-panel-header';
+    const title = document.createElement('div');
+    title.className = 'qt-bonuses-panel-title';
+    title.textContent = 'Bonuses & Discounts';
+    header.appendChild(title);
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'qt-bonuses-panel-close';
+    closeBtn.setAttribute('aria-label', 'Close');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => closeBonuses(state));
+    header.appendChild(closeBtn);
+    panel.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'qt-bonuses-panel-body';
+
     const disclosure = document.createElement('div');
     disclosure.className = 'qt-disclosure';
     disclosure.textContent = Config.DISCLOSURE;
-    panel.appendChild(disclosure);
+    body.appendChild(disclosure);
 
-    panel.appendChild(buildOfferSection('Brokerages', Config.BROKERAGE_OFFERS));
-    panel.appendChild(buildOfferSection('Research tools', Config.RESEARCH_OFFERS));
+    body.appendChild(buildOfferSection('Brokerages', Config.BROKERAGE_OFFERS));
+    body.appendChild(buildOfferSection('Research tools', Config.RESEARCH_OFFERS));
 
     if (state.prefs && state.prefs.showCrypto) {
-      panel.appendChild(buildOfferSection('Crypto exchanges', Config.CRYPTO_OFFERS));
+      body.appendChild(buildOfferSection('Crypto exchanges', Config.CRYPTO_OFFERS));
     }
+
+    // Single, universal terms line at the bottom — replaces the per-card
+    // "Rewards vary" blurb that used to repeat on every offer.
+    const footerText = document.createElement('div');
+    footerText.className = 'qt-bonuses-panel-footer';
+    footerText.textContent = Config.UNIVERSAL_TERMS;
+    body.appendChild(footerText);
+
+    panel.appendChild(body);
   }
 
   function buildOfferSection(title, offers) {
@@ -1261,10 +1502,31 @@
     const card = document.createElement('div');
     card.className = 'qt-offer-card';
 
+    // Logo: real platform favicon sourced from Google's S2 service, with
+    // a colored-letter fallback if the image fails to load. We keep the
+    // accent color on the container so the fallback stays on-brand.
     const logo = document.createElement('div');
     logo.className = 'qt-offer-logo';
-    logo.textContent = offer.name.charAt(0);
     logo.style.backgroundColor = offer.accent || '#2a2a2a';
+
+    const letter = document.createElement('span');
+    letter.textContent = offer.name.charAt(0);
+    letter.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;';
+    logo.appendChild(letter);
+
+    if (offer.domain) {
+      const img = document.createElement('img');
+      img.src = 'https://www.google.com/s2/favicons?sz=64&domain=' + encodeURIComponent(offer.domain);
+      img.alt = offer.name + ' logo';
+      img.loading = 'lazy';
+      img.referrerPolicy = 'no-referrer';
+      // Hide the letter once the real logo paints.
+      img.addEventListener('load', () => { letter.style.display = 'none'; });
+      // If favicon load fails for any reason, fall back to the letter.
+      img.addEventListener('error', () => { img.remove(); });
+      logo.appendChild(img);
+    }
+
     card.appendChild(logo);
 
     const body = document.createElement('div');
@@ -1275,12 +1537,8 @@
     const blurb = document.createElement('div');
     blurb.className = 'qt-offer-blurb';
     blurb.textContent = offer.blurb;
-    const terms = document.createElement('div');
-    terms.className = 'qt-offer-terms';
-    terms.textContent = 'Rewards vary. See current terms at their site.';
     body.appendChild(name);
     body.appendChild(blurb);
-    body.appendChild(terms);
     card.appendChild(body);
 
     const btn = document.createElement('button');

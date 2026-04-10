@@ -14,6 +14,7 @@
     'opt-showGroupAverages',
     'opt-personalValue',
     'opt-aiSummaries',
+    'opt-ai-deactivated-msg',
     'opt-showCrypto',
     'opt-defaultViewSidepanel',
     'opt-darkMode',
@@ -51,6 +52,7 @@
 
     const prefs = await Storage.getPrefs();
     paintPrefs(prefs);
+    applyDarkMode(prefs.darkMode !== false);
     await renderGroups();
 
     bindHandlers();
@@ -61,8 +63,10 @@
     els['opt-showGroupAverages'].checked = !!prefs.showGroupAverages;
     els['opt-personalValue'].checked = !!prefs.personalValue;
     els['opt-aiSummaries'].checked = !!prefs.aiSummaries;
+    els['opt-ai-deactivated-msg'].hidden = !!prefs.aiSummaries;
     els['opt-showCrypto'].checked = !!prefs.showCrypto;
     els['opt-defaultViewSidepanel'].checked = prefs.defaultView === 'sidepanel';
+    els['opt-darkMode'].checked = prefs.darkMode !== false;
     els['opt-backupSourcesEnabled'].checked = !!prefs.backupSourcesEnabled;
     els['opt-finnhubKey'].value = prefs.finnhubKey || '';
     els['opt-alphaVantageKey'].value = prefs.alphaVantageKey || '';
@@ -71,6 +75,14 @@
     els['opt-coinGeckoKey'].disabled = els['opt-coinGeckoUseFreeTier'].checked;
     syncBackupVisibility();
     syncCryptoVisibility();
+  }
+
+  // Apply/remove the light-mode class on <body> so options.css overrides
+  // take effect immediately. The sidebar/popup read the same pref on their
+  // own init + storage-change listeners.
+  function applyDarkMode(isDark) {
+    if (isDark) document.body.classList.remove('qt-light');
+    else document.body.classList.add('qt-light');
   }
 
   // Every input in the prefs form auto-saves on change. Text inputs
@@ -83,12 +95,25 @@
       'opt-aiSummaries',
       'opt-showCrypto',
       'opt-defaultViewSidepanel',
+      'opt-darkMode',
       'opt-backupSourcesEnabled',
       'opt-coinGeckoUseFreeTier'
     ];
     for (const id of autoSaveTargets) {
       els[id].addEventListener('change', autoSave);
     }
+
+    // AI summaries: show an inline "deactivated" message under the toggle
+    // when switched off, and hide it when switched back on.
+    els['opt-aiSummaries'].addEventListener('change', () => {
+      els['opt-ai-deactivated-msg'].hidden = els['opt-aiSummaries'].checked;
+    });
+
+    // Dark mode: apply/remove the light class on the options page itself
+    // so the toggle has instant visual feedback.
+    els['opt-darkMode'].addEventListener('change', () => {
+      applyDarkMode(els['opt-darkMode'].checked);
+    });
 
     // Debounce text-input auto-save so we're not thrashing storage on
     // every keystroke while the user pastes a long API key.
@@ -317,6 +342,7 @@
       aiSummaries: els['opt-aiSummaries'].checked,
       showCrypto: els['opt-showCrypto'].checked,
       defaultView: els['opt-defaultViewSidepanel'].checked ? 'sidepanel' : 'popup',
+      darkMode: els['opt-darkMode'].checked,
       backupSourcesEnabled: els['opt-backupSourcesEnabled'].checked,
       finnhubKey: els['opt-finnhubKey'].value.trim().slice(0, 200),
       alphaVantageKey: els['opt-alphaVantageKey'].value.trim().slice(0, 200),
