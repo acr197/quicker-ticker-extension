@@ -441,3 +441,87 @@ html, body {
   font-size: 12px;
 }
 .qt-opt-delete-select:focus { outline: none; border-color: #00c853; }
+
+/* Inline status message under a toggle (e.g. "AI summary deactivated") */
+.qt-opt-inline-msg {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #ffa726;
+  background: rgba(255, 167, 38, 0.08);
+  border: 1px solid rgba(255, 167, 38, 0.25);
+  border-radius: 6px;
+  padding: 5px 8px;
+  display: inline-block;
+  animation: qt-opt-inline-msg-in 0.18s ease-out;
+}
+@keyframes qt-opt-inline-msg-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Light mode overrides ---------- */
+
+body.qt-light {
+  background: #f7f8fa;
+  color: #1a1a1a;
+}
+body.qt-light .qt-opt-header h1 { color: #111; }
+body.qt-light .qt-opt-tag { color: #666; }
+body.qt-light .qt-opt-section {
+  background: #ffffff;
+  border-color: #e4e6ea;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+body.qt-light .qt-opt-section h2 { color: #555; }
+body.qt-light .qt-opt-help { color: #666; }
+body.qt-light .qt-opt-toggle { border-top-color: #eef0f3; }
+body.qt-light .qt-opt-toggle input[type="checkbox"] { background: #d0d4dc; }
+body.qt-light .qt-opt-toggle-title { color: #111; }
+body.qt-light .qt-opt-toggle-desc { color: #666; }
+body.qt-light .qt-opt-key,
+body.qt-light .qt-opt-delete-select,
+body.qt-light .qt-opt-add-group-row input {
+  background: #fff;
+  border-color: #d8dbe0;
+  color: #111;
+}
+body.qt-light .qt-opt-key:focus,
+body.qt-light .qt-opt-delete-select:focus { border-color: #00a846; }
+body.qt-light .qt-opt-source {
+  background: #fafbfc;
+  border-color: #e4e6ea;
+}
+body.qt-light .qt-opt-source-name { color: #111; }
+body.qt-light .qt-opt-muted { color: #888; }
+body.qt-light .qt-opt-privacy { color: #777; }
+body.qt-light .qt-opt-info summary { color: #555; }
+body.qt-light .qt-opt-info p { color: #555; }
+body.qt-light .qt-opt-group-row input { background: #fff; border-color: #d8dbe0; color: #111; }
+body.qt-light .qt-opt-actions button {
+  background: #fff;
+  border-color: #d8dbe0;
+  color: #111;
+}
+body.qt-light .qt-opt-actions button:hover { background: #f2f4f7; }
+body.qt-light .qt-opt-actions button.destructive { color: #c62828; }
+body.qt-light .qt-opt-footer {
+  background: #ffffff;
+  border-top-color: #e4e6ea;
+}
+body.qt-light .qt-opt-auto { color: #888; }
+body.qt-light .qt-opt-add-source {
+  background: #fff;
+  border-color: #d8dbe0;
+  color: #555;
+}
+body.qt-light .qt-opt-add-source:hover { background: #f2f4f7; }
+body.qt-light .qt-opt-modal-card {
+  background: #ffffff;
+  border-color: #e4e6ea;
+  color: #111;
+}
+body.qt-light .qt-opt-inline-msg {
+  color: #b85400;
+  background: rgba(255, 140, 0, 0.08);
+  border-color: rgba(255, 140, 0, 0.3);
+}
